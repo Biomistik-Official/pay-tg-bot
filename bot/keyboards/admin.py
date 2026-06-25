@@ -174,6 +174,15 @@ def request_action_keyboard(request_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def reject_request_keyboard(request_id: int) -> InlineKeyboardMarkup:
+    """Кнопки выбора способа отклонения заявки (без причины / с причиной)."""
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="⏭️ Без причины", callback_data=f"reject_req_no_reason:{request_id}"))
+    builder.row(InlineKeyboardButton(text="📝 Указать причину", callback_data=f"reject_req_with_reason:{request_id}"))
+    builder.row(InlineKeyboardButton(text="⬅️ Назад к заявкам", callback_data="pending_requests"))
+    return builder.as_markup()
+
+
 def request_history_nav_keyboard(offset: int, total: int, page_size: int = 5) -> InlineKeyboardMarkup:
     """Навигация по истории заявок."""
     builder = InlineKeyboardBuilder()
