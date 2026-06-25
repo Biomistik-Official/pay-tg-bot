@@ -2,7 +2,7 @@
 Обработчик заявок пользователя (запрос тикетов/баллов).
 
 Тикеты теперь — именные билеты (Платиновый, Золотой, Серебряный, Бронзовый, Вспомогательный).
-Пользователь выбирает тип тикета кнопкой, затем вводит причину.
+Пользователь выбирает тип тикета кнопкой, вводит количество, затем причину.
 
 Баллы — числовые, вводятся вручную.
 """
@@ -144,12 +144,12 @@ async def request_tickets_start(callback: CallbackQuery, state: FSMContext) -> N
 
 
 # ──────────────────────────────────────────────
-# Запрос тикетов — шаг 2: ввод причины
+# Запрос тикетов — шаг 2: ввод количества
 # ──────────────────────────────────────────────
 
 @router.callback_query(RequestTickets.waiting_ticket_type, F.data.startswith("ticket_type:"))
 async def request_tickets_type_chosen(callback: CallbackQuery, state: FSMContext) -> None:
-    """Пользователь выбрал тип тикета — просим причину."""
+    """Пользователь выбрал тип тикета — просим количество."""
     ticket_key = callback.data.split(":")[1]
 
     if ticket_key not in TICKET_INFO:
@@ -160,11 +160,11 @@ async def request_tickets_type_chosen(callback: CallbackQuery, state: FSMContext
     value_str = f"{value:g}"
 
     await state.update_data(ticket_key=ticket_key, ticket_name=name, ticket_emoji=emoji, ticket_value=value)
-    await state.set_state(RequestTickets.waiting_reason)
+    await state.set_state(RequestTickets.waiting_amount)
 
     await callback.message.edit_text(
         f"🎫 <b>Запрос: {emoji} {name} тикет</b> ({value_str} балл{'а' if value < 2 or 2 <= value < 5 else 'ов'})\n\n"
-        "📝 Теперь напишите <b>причину</b> получения тикета:",
+        "🔢 Введите <b>количество тикетов</b>, которое хотите запросить:",
         reply_markup=cancel_keyboard(),
         parse_mode="HTML"
     )
@@ -172,12 +172,54 @@ async def request_tickets_type_chosen(callback: CallbackQuery, state: FSMContext
 
 
 # ──────────────────────────────────────────────
-# Запрос тикетов — шаг 3: отправка заявки
+# Запрос тикетов — шаг 3: ввод причины
+# ──────────────────────────────────────────────
+
+@router.message(RequestTickets.waiting_amount)
+async def request_tickets_amount(message: Message, state: FSMContext) -> None:
+    """Пользователь ввёл количество тикетов — просим причину."""
+    if not message.text:
+        await message.answer(
+            "⚠️ Пожалуйста, введите количество числом.",
+            reply_markup=cancel_keyboard()
+        )
+        return
+
+    try:
+        amount = int(message.text.strip())
+        if amount <= 0:
+            raise ValueError
+    except ValueError:
+        await message.answer(
+            "⚠️ Введите целое положительное число (например, 1, 2, 3...).",
+            reply_markup=cancel_keyboard()
+        )
+        return
+
+    data = await state.get_data()
+    ticket_emoji = data["ticket_emoji"]
+    ticket_name  = data["ticket_name"]
+    ticket_value = data["ticket_value"]
+    value_str    = f"{ticket_value:g}"
+
+    await state.update_data(ticket_amount=amount)
+    await state.set_state(RequestTickets.waiting_reason)
+
+    await message.answer(
+        f"🎫 <b>{ticket_emoji} {ticket_name} тикет × {amount} шт.</b>\n\n"
+        "📝 Теперь напишите <b>причину</b> получения тикетов:",
+        reply_markup=cancel_keyboard(),
+        parse_mode="HTML"
+    )
+
+
+# ──────────────────────────────────────────────
+# Запрос тикетов — шаг 4: отправка заявки
 # ──────────────────────────────────────────────
 
 @router.message(RequestTickets.waiting_reason)
 async def request_tickets_reason(message: Message, state: FSMContext, bot: Bot) -> None:
-    """Обработать причину и отправить заявку на тикет."""
+    """Обработать причину и отправить заявку на тикеты."""
     if not message.text:
         await message.answer(
             "⚠️ Пожалуйста, напишите текстовую причину получения тикета.",
@@ -194,19 +236,20 @@ async def request_tickets_reason(message: Message, state: FSMContext, bot: Bot) 
         return
 
     data = await state.get_data()
-    ticket_key   = data["ticket_key"]
-    ticket_name  = data["ticket_name"]
-    ticket_emoji = data["ticket_emoji"]
-    ticket_value = data["ticket_value"]
+    ticket_key    = data["ticket_key"]
+    ticket_name   = data["ticket_name"]
+    ticket_emoji  = data["ticket_emoji"]
+    ticket_value  = data["ticket_value"]
+    ticket_amount = data.get("ticket_amount", 1)
 
     user = await queries.get_user_by_telegram_id(message.from_user.id)
 
-    # Создаём заявку в БД: amount = 1 тикет, reason содержит тип тикета + причину
-    full_reason = f"[{ticket_emoji} {ticket_name} тикет] {reason}"
+    # Создаём заявку в БД: amount = введённое количество тикетов, reason = чистый текст
+    full_reason = reason
     request_id = await queries.create_request(
         user_id=user["id"],
         currency_type=f"tickets_{ticket_key}",
-        amount=1,
+        amount=ticket_amount,
         reason=full_reason
     )
     req = await queries.get_request_by_id(request_id)
@@ -217,8 +260,8 @@ async def request_tickets_reason(message: Message, state: FSMContext, bot: Bot) 
 
     # Уведомляем пользователя
     await message.answer(
-        f"✅ <b>Заявка на тикет отправлена!</b>\n\n"
-        f"{ticket_emoji} <b>{ticket_name} тикет</b> ({value_str} балл{'а' if ticket_value < 2 or 2 <= ticket_value < 5 else 'ов'})\n"
+        f"✅ <b>Заявка на тикеты отправлена!</b>\n\n"
+        f"{ticket_emoji} <b>{ticket_name} тикет × {ticket_amount} шт.</b>\n"
         f"📝 Причина: {reason}\n\n"
         "Ожидайте решения владельца.",
         parse_mode="HTML"
@@ -236,7 +279,7 @@ async def request_tickets_reason(message: Message, state: FSMContext, bot: Bot) 
     except Exception as e:
         logger.error(f"Не удалось отправить уведомление Owner: {e}")
 
-    logger.info(f"Заявка #{request_id} на {ticket_name} тикет от {user['nickname']} (TG:{user['telegram_id']})")
+    logger.info(f"Заявка #{request_id} на {ticket_amount}× {ticket_name} тикет от {user['nickname']} (TG:{user['telegram_id']})")
 
 
 # ──────────────────────────────────────────────

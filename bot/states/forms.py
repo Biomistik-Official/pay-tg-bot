@@ -25,6 +25,7 @@ class ChangePlayerTag(StatesGroup):
 # ──────────────────────────────────────────────
 class RequestTickets(StatesGroup):
     waiting_ticket_type = State()   # выбор типа тикета (кнопкой)
+    waiting_amount      = State()   # количество тикетов
     waiting_reason      = State()   # причина получения
 
 

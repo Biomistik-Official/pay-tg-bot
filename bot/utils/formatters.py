@@ -120,10 +120,12 @@ def format_request_for_owner(req: dict, user: dict) -> str:
     if req["currency_type"].startswith("tickets_"):
         key = req["currency_type"].replace("tickets_", "")
         emoji, name = TICKET_NAMES.get(key, ("🎫", "Тикет"))
+        amount_val = int(req.get("amount", 1))
         return (
-            f"📨 <b>Новая заявка на тикет</b>\n\n"
+            f"📨 <b>Новая заявка на тикеты</b>\n\n"
             f"👤 <b>Пользователь:</b> {user_info}\n"
             f"🎫 <b>Тип тикета:</b> {emoji} {name}\n"
+            f"🔢 <b>Количество:</b> {amount_val} шт.\n"
             f"📝 <b>Причина:</b> {req['reason']}\n"
             f"🕐 <b>Время:</b> {format_datetime(req['created_at'])}"
         )
