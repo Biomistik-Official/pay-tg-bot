@@ -415,7 +415,8 @@ async def get_statistics() -> dict:
                  COALESCE(SUM(tickets_gold), 0),
                  COALESCE(SUM(tickets_silver), 0),
                  COALESCE(SUM(tickets_bronze), 0),
-                 COALESCE(SUM(tickets_support), 0)
+                 COALESCE(SUM(tickets_support), 0),
+                 COALESCE(SUM(tickets_help), 0)
                FROM users"""
         ) as c:
             row = await c.fetchone()
@@ -424,6 +425,7 @@ async def get_statistics() -> dict:
             tickets_silver = row[2]
             tickets_bronze = row[3]
             tickets_support = row[4]
+            tickets_help = row[5]
             total_tickets = sum(row)
 
         async with db.execute("SELECT COALESCE(SUM(points), 0) FROM users") as c:
@@ -456,6 +458,7 @@ async def get_statistics() -> dict:
         "tickets_silver": tickets_silver,
         "tickets_bronze": tickets_bronze,
         "tickets_support": tickets_support,
+        "tickets_help": tickets_help,
         "total_points": total_points,
         "total_requests": total_requests,
         "approved": approved,
