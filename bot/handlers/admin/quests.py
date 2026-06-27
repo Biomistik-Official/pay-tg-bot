@@ -123,6 +123,7 @@ async def show_quest_detail(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("quest_stats:"))
 async def show_quest_stats(callback: CallbackQuery) -> None:
+    import html
     if not _is_owner(callback.from_user.id):
         return await callback.answer("No access.", show_alert=True)
     quest_id = int(callback.data.split(":")[1])
@@ -130,13 +131,30 @@ async def show_quest_stats(callback: CallbackQuery) -> None:
     if not q:
         return await callback.answer("Квест не найден.", show_alert=True)
     s = await queries.get_quest_stats(quest_id)
+    
+    reward = _reward_label(q["reward_type"], q["reward_amount"])
+    executors = await queries.get_approved_quest_executors(quest_id)
+    
+    executors_list = []
+    for idx, e in enumerate(executors, 1):
+        if e.get("username"):
+            tag = f"@{e['username']}"
+        else:
+            escaped_nickname = html.escape(e['nickname'])
+            tag = f"<a href=\"tg://user?id={e['telegram_id']}\">{escaped_nickname}</a>"
+        executors_list.append(f"{idx}. {tag}")
+    
+    executors_str = "\n".join(executors_list) if executors_list else "—"
+    
     text = (
         f"\U0001f4ca <b>Статистика: {q['title']}</b>\n\n"
+        f"\U0001f381 Награда: <b>{reward}</b>\n\n"
         f"Взято: <b>{s['taken']}</b>\n"
         f"На проверке: <b>{s['submitted']}</b>\n"
         f"\u2705 Одобрено: <b>{s['approved']}</b>\n"
         f"\u274c Отклонено: <b>{s['rejected']}</b>\n"
-        f"Всего: <b>{s['total']}</b>"
+        f"Всего: <b>{s['total']}</b>\n\n"
+        f"Выполнили:\n{executors_str}"
     )
     await _edit_or_reply(
         callback,
