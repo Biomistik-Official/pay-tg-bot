@@ -14,8 +14,9 @@ from bot.keyboards.admin import (
     admin_panel_keyboard,
     user_profile_admin_keyboard,
     cancel_admin_keyboard,
+    user_moderation_keyboard,
 )
-from bot.states.forms import SearchUser, ChangeNickname, ChangePlayerTag
+from bot.states.forms import SearchUser, ChangeNickname, ChangePlayerTag, ManageModeration
 from bot.utils.formatters import format_profile
 from bot.utils.logger import log_admin_action
 from bot.utils.brawlstars import BrawlStarsClient, BrawlStarsAPIError, ALLOWED_CLUBS
@@ -413,6 +414,132 @@ async def view_user_history(callback: CallbackQuery) -> None:
         parse_mode="HTML"
     )
     await callback.answer()
+
+
+# ──────────────────────────────────────────────
+# Модерация (Анварны и Анмуты)
+# ──────────────────────────────────────────────
+
+@router.callback_query(F.data.startswith("user_moderation:"))
+async def user_moderation(callback: CallbackQuery) -> None:
+    if not _is_owner(callback):
+        await callback.answer("⛔ Доступ запрещён.", show_alert=True)
+        return
+
+    telegram_id = int(callback.data.split(":")[1])
+    user = await queries.get_user_by_telegram_id(telegram_id)
+    if not user:
+        await callback.answer("Пользователь не найден.", show_alert=True)
+        return
+
+    text = (
+        f"⚖️ <b>Модерация пользователя</b>\n"
+        f"👤 {user['nickname']} (ID: {telegram_id})\n\n"
+        f"⚠️ Анварны: <b>{user.get('unwarns', 0)}</b>\n"
+        f"🔇 Анмуты: <b>{user.get('unmutes', 0)}</b>\n\n"
+        f"Выберите действие:"
+    )
+    await callback.message.edit_text(
+        text,
+        reply_markup=user_moderation_keyboard(telegram_id),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("give_unwarn:") | F.data.startswith("take_unwarn:") | F.data.startswith("give_unmute:") | F.data.startswith("take_unmute:"))
+async def quick_moderation_action(callback: CallbackQuery) -> None:
+    if not _is_owner(callback):
+        await callback.answer("⛔ Доступ запрещён.", show_alert=True)
+        return
+
+    parts = callback.data.split(":")
+    action = parts[0]
+    telegram_id = int(parts[1])
+
+    user = await queries.get_user_by_telegram_id(telegram_id)
+    if not user:
+        await callback.answer("Пользователь не найден.", show_alert=True)
+        return
+
+    currency_type = "unwarns" if "unwarn" in action else "unmutes"
+    operation = "add" if "give" in action else "subtract"
+
+    # Выдаем или забираем 1 штуку
+    if operation == "subtract" and user.get(currency_type, 0) <= 0:
+        await callback.answer("❌ Баланс не может быть меньше нуля.", show_alert=True)
+        return
+
+    await queries.update_user_balance(user["id"], currency_type, operation, 1)
+    await queries.add_transaction(user["id"], currency_type, operation, 1, performed_by=callback.from_user.id)
+
+    mod_type = "Анварн" if currency_type == "unwarns" else "Анмут"
+    op_text = "выдан" if operation == "add" else "снят"
+    log_admin_action(callback.from_user.id, f"{operation.upper()}_{currency_type.upper()}", f"TG:{telegram_id} 1 {mod_type}")
+
+    await callback.answer(f"✅ {mod_type} {op_text}.", show_alert=True)
+    await user_moderation(callback)
+
+
+@router.callback_query(F.data.startswith("set_unwarn:") | F.data.startswith("set_unmute:"))
+async def set_moderation_start(callback: CallbackQuery, state: FSMContext) -> None:
+    if not _is_owner(callback):
+        await callback.answer("⛔ Доступ запрещён.", show_alert=True)
+        return
+
+    parts = callback.data.split(":")
+    action = parts[0]
+    telegram_id = int(parts[1])
+
+    currency_type = "unwarns" if "unwarn" in action else "unmutes"
+    mod_name = "Анварнов" if currency_type == "unwarns" else "Анмутов"
+
+    await state.set_state(ManageModeration.waiting_amount)
+    await state.update_data(target_telegram_id=telegram_id, currency_type=currency_type)
+
+    await callback.message.edit_text(
+        f"✏️ <b>Установка значения</b>\n\nВведите новое количество {mod_name}:",
+        reply_markup=cancel_admin_keyboard(),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.message(ManageModeration.waiting_amount)
+async def process_set_moderation(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    telegram_id = data["target_telegram_id"]
+    currency_type = data["currency_type"]
+
+    try:
+        amount = int(message.text.strip())
+        if amount < 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("⚠️ Введите корректное положительное число или 0.", reply_markup=cancel_admin_keyboard())
+        return
+
+    await state.clear()
+    user = await queries.get_user_by_telegram_id(telegram_id)
+    if not user:
+        await message.answer("❌ Пользователь не найден.")
+        return
+
+    await queries.update_user_balance(user["id"], currency_type, "set", amount)
+    await queries.add_transaction(user["id"], currency_type, "set", amount, performed_by=message.from_user.id)
+
+    mod_type = "Анварнов" if currency_type == "unwarns" else "Анмутов"
+    log_admin_action(message.from_user.id, f"SET_{currency_type.upper()}", f"TG:{telegram_id} = {amount}")
+
+    await message.answer(f"✅ Установлено {amount} {mod_type} для пользователя <b>{user['nickname']}</b>.", parse_mode="HTML")
+
+    # Перерисовываем профиль
+    updated_user = await queries.get_user_by_telegram_id(telegram_id)
+    await message.answer(
+        format_profile(updated_user),
+        reply_markup=user_profile_admin_keyboard(updated_user["telegram_id"], bool(updated_user["is_blocked"])),
+        parse_mode="HTML"
+    )
 
 
 @router.callback_query(F.data == "cancel_admin_form")

@@ -166,3 +166,10 @@ class AdminAnnouncement(StatesGroup):
     waiting_text    = State()
     confirm         = State()
 
+
+# ──────────────────────────────────────────────
+# Управление модерацией (Admin)
+# ──────────────────────────────────────────────
+class ManageModeration(StatesGroup):
+    waiting_amount = State()
+

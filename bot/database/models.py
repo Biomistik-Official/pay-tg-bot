@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS users (
     tickets_support  INTEGER DEFAULT 0,
     tickets_help     INTEGER DEFAULT 0,
     points          REAL DEFAULT 0,
+    unwarns         INTEGER DEFAULT 0,
+    unmutes         INTEGER DEFAULT 0,
     is_blocked      INTEGER DEFAULT 0,
     registered_at   TEXT DEFAULT (datetime('now')),
     approved_requests INTEGER DEFAULT 0
@@ -31,7 +33,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS transactions (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id         INTEGER NOT NULL,
-    currency_type   TEXT NOT NULL CHECK(currency_type IN ('points', 'tickets_platinum', 'tickets_gold', 'tickets_silver', 'tickets_bronze', 'tickets_support', 'tickets_help')),
+    currency_type   TEXT NOT NULL CHECK(currency_type IN ('points', 'tickets_platinum', 'tickets_gold', 'tickets_silver', 'tickets_bronze', 'tickets_support', 'tickets_help', 'unwarns', 'unmutes')),
     operation       TEXT NOT NULL CHECK(operation IN ('add', 'subtract', 'set')),
     amount          REAL NOT NULL,
     reason          TEXT DEFAULT '',
@@ -160,16 +162,24 @@ async def init_db() -> None:
             await db.execute("ALTER TABLE users ADD COLUMN tickets_help INTEGER DEFAULT 0")
             await db.commit()
 
+        if "unwarns" not in columns:
+            await db.execute("ALTER TABLE users ADD COLUMN unwarns INTEGER DEFAULT 0")
+            await db.commit()
+
+        if "unmutes" not in columns:
+            await db.execute("ALTER TABLE users ADD COLUMN unmutes INTEGER DEFAULT 0")
+            await db.commit()
+
         # Миграция: Обновляем CHECK constraint для transactions, если нужно
         async with db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='transactions'") as cursor:
             row = await cursor.fetchone()
-            if row and "tickets_help" not in row[0]:
+            if row and ("unwarns" not in row[0] or "unmutes" not in row[0]):
                 await db.execute("ALTER TABLE transactions RENAME TO transactions_old")
                 await db.execute("""
                     CREATE TABLE transactions (
                         id              INTEGER PRIMARY KEY AUTOINCREMENT,
                         user_id         INTEGER NOT NULL,
-                        currency_type   TEXT NOT NULL CHECK(currency_type IN ('points', 'tickets_platinum', 'tickets_gold', 'tickets_silver', 'tickets_bronze', 'tickets_support', 'tickets_help')),
+                        currency_type   TEXT NOT NULL CHECK(currency_type IN ('points', 'tickets_platinum', 'tickets_gold', 'tickets_silver', 'tickets_bronze', 'tickets_support', 'tickets_help', 'unwarns', 'unmutes')),
                         operation       TEXT NOT NULL CHECK(operation IN ('add', 'subtract', 'set')),
                         amount          REAL NOT NULL,
                         reason          TEXT DEFAULT '',
@@ -178,7 +188,7 @@ async def init_db() -> None:
                         FOREIGN KEY (user_id) REFERENCES users(id)
                     )
                 """)
-                await db.execute("INSERT INTO transactions SELECT * FROM transactions_old")
+                await db.execute("INSERT INTO transactions (id, user_id, currency_type, operation, amount, reason, performed_by, created_at) SELECT id, user_id, currency_type, operation, amount, reason, performed_by, created_at FROM transactions_old")
                 await db.execute("DROP TABLE transactions_old")
                 await db.commit()
 

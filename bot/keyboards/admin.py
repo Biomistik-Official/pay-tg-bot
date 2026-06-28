@@ -100,6 +100,7 @@ def user_profile_admin_keyboard(telegram_id: int, is_blocked: bool) -> InlineKey
         InlineKeyboardButton(text="🎫 Тикеты", callback_data=f"manage_tickets:{telegram_id}"),
         InlineKeyboardButton(text="⭐ Баллы", callback_data=f"manage_points:{telegram_id}"),
     )
+    builder.row(InlineKeyboardButton(text="⚖️ Модерация", callback_data=f"user_moderation:{telegram_id}"))
     builder.row(InlineKeyboardButton(text="📊 История", callback_data=f"user_history:{telegram_id}:0"))
     builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_users"))
     return builder.as_markup()
@@ -147,6 +148,27 @@ def manage_currency_from_profile_keyboard(telegram_id: int, currency: str) -> In
         text=f"🔄 Установить баланс",
         callback_data=f"set_{currency}_for:{telegram_id}"
     ))
+    builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"view_user:{telegram_id}"))
+    return builder.as_markup()
+
+
+def user_moderation_keyboard(telegram_id: int) -> InlineKeyboardMarkup:
+    """Меню модерации пользователя (Анварны и Анмуты)."""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="➕ Выдать Анварн", callback_data=f"give_unwarn:{telegram_id}"),
+        InlineKeyboardButton(text="➖ Снять Анварн", callback_data=f"take_unwarn:{telegram_id}")
+    )
+    builder.row(
+        InlineKeyboardButton(text="✏️ Установить Анварны", callback_data=f"set_unwarn:{telegram_id}")
+    )
+    builder.row(
+        InlineKeyboardButton(text="➕ Выдать Анмут", callback_data=f"give_unmute:{telegram_id}"),
+        InlineKeyboardButton(text="➖ Снять Анмут", callback_data=f"take_unmute:{telegram_id}")
+    )
+    builder.row(
+        InlineKeyboardButton(text="✏️ Установить Анмуты", callback_data=f"set_unmute:{telegram_id}")
+    )
     builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"view_user:{telegram_id}"))
     return builder.as_markup()
 
