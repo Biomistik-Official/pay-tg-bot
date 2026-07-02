@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>VGS Money — панель</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">VGS<span>Money</span></div>
+    <nav>
+      <button class="nav-btn active" data-tab="overview">Обзор</button>
+      <button class="nav-btn" data-tab="users">Пользователи</button>
+      <button class="nav-btn" data-tab="transactions">Транзакции</button>
+      <button class="nav-btn" data-tab="requests">Заявки</button>
+      <button class="nav-btn" data-tab="orders">Заказы</button>
+      <button class="nav-btn" data-tab="quests">Квесты</button>
+      <button class="nav-btn" data-tab="logs">Логи</button>
+    </nav>
+    <form class="logout" method="post" action="/logout">
+      <button type="submit">Выйти</button>
+    </form>
+  </aside>
+
+  <main>
+    <!-- Overview -->
+    <section class="tab active" id="tab-overview">
+      <h1>Обзор</h1>
+      <div class="cards" id="ov-cards"></div>
+      <div class="grid-2">
+        <div class="panel">
+          <h2>Активность за 14 дней</h2>
+          <canvas id="chart-activity"></canvas>
+        </div>
+        <div class="panel">
+          <h2>Распределение по клубам</h2>
+          <canvas id="chart-clubs"></canvas>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Заявки по статусам</h2>
+        <canvas id="chart-requests"></canvas>
+      </div>
+    </section>
+
+    <!-- Users -->
+    <section class="tab" id="tab-users">
+      <h1>Пользователи</h1>
+      <div class="toolbar">
+        <input id="users-q" placeholder="Поиск: ник / username / tag / TG id">
+        <select id="users-blocked">
+          <option value="">Все</option>
+          <option value="0">Активные</option>
+          <option value="1">Заблок (ручно)</option>
+          <option value="2">Заблок (авто)</option>
+        </select>
+        <select id="users-order">
+          <option value="points">По points</option>
+          <option value="approved_requests">По заявкам</option>
+          <option value="registered_at">По регистрации</option>
+          <option value="nickname">По нику</option>
+        </select>
+        <span class="counter" id="users-count"></span>
+      </div>
+      <div class="panel table-wrap">
+        <table id="users-table">
+          <thead><tr>
+            <th>TG ID</th><th>Ник</th><th>Клуб</th><th>Points</th>
+            <th title="platinum/gold/silver/bronze">Билеты P/G/S/B</th>
+            <th title="support/help">S/H</th>
+            <th>Unw/Unm</th><th>Статус</th><th>Регистрация</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="pager" id="users-pager"></div>
+    </section>
+
+    <!-- Transactions -->
+    <section class="tab" id="tab-transactions">
+      <h1>Транзакции</h1>
+      <div class="toolbar">
+        <select id="tx-currency">
+          <option value="">Все валюты</option>
+          <option value="points">points</option>
+          <option value="tickets_platinum">tickets_platinum</option>
+          <option value="tickets_gold">tickets_gold</option>
+          <option value="tickets_silver">tickets_silver</option>
+          <option value="tickets_bronze">tickets_bronze</option>
+          <option value="tickets_support">tickets_support</option>
+          <option value="tickets_help">tickets_help</option>
+          <option value="unwarns">unwarns</option>
+          <option value="unmutes">unmutes</option>
+        </select>
+        <select id="tx-op">
+          <option value="">Все операции</option>
+          <option value="add">add</option>
+          <option value="subtract">subtract</option>
+          <option value="set">set</option>
+        </select>
+        <span class="counter" id="tx-count"></span>
+      </div>
+      <div class="panel table-wrap">
+        <table id="tx-table">
+          <thead><tr>
+            <th>ID</th><th>Дата</th><th>Пользователь</th><th>Валюта</th>
+            <th>Операция</th><th>Сумма</th><th>Кем</th><th>Причина</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="pager" id="tx-pager"></div>
+    </section>
+
+    <!-- Requests -->
+    <section class="tab" id="tab-requests">
+      <h1>Заявки</h1>
+      <div class="toolbar">
+        <select id="req-status">
+          <option value="">Все</option>
+          <option value="pending">Ожидают</option>
+          <option value="approved">Одобрены</option>
+          <option value="rejected">Отклонены</option>
+        </select>
+        <span class="counter" id="req-count"></span>
+      </div>
+      <div class="panel table-wrap">
+        <table id="req-table">
+          <thead><tr>
+            <th>ID</th><th>Дата</th><th>Пользователь</th><th>Валюта</th>
+            <th>Сумма</th><th>Причина</th><th>Статус</th><th>Просмотрено</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="pager" id="req-pager"></div>
+    </section>
+
+    <!-- Orders -->
+    <section class="tab" id="tab-orders">
+      <h1>Заказы магазина</h1>
+      <div class="toolbar">
+        <select id="ord-status">
+          <option value="">Все</option>
+          <option value="pending">Ожидают</option>
+          <option value="completed">Выполнены</option>
+          <option value="ignored">Проигнорированы</option>
+        </select>
+        <span class="counter" id="ord-count"></span>
+      </div>
+      <div class="panel table-wrap">
+        <table id="ord-table">
+          <thead><tr>
+            <th>ID</th><th>Дата</th><th>Пользователь</th><th>Тип</th>
+            <th>Детали</th><th>Статус</th><th>Завершено</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="pager" id="ord-pager"></div>
+    </section>
+
+    <!-- Quests -->
+    <section class="tab" id="tab-quests">
+      <h1>Квесты</h1>
+      <div class="toolbar">
+        <select id="quest-status">
+          <option value="">Все</option>
+          <option value="active">Активные</option>
+          <option value="closed">Закрытые</option>
+        </select>
+      </div>
+      <div class="quests-list" id="quests-list"></div>
+    </section>
+
+    <!-- Logs -->
+    <section class="tab" id="tab-logs">
+      <h1>Логи</h1>
+      <div class="toolbar">
+        <select id="log-day"></select>
+        <label class="live-toggle">
+          <input type="checkbox" id="log-live" checked>
+          Live-режим
+        </label>
+        <input id="log-filter" placeholder="Фильтр (regex или подстрока)">
+        <button id="log-clear">Очистить</button>
+        <span class="counter" id="log-count"></span>
+      </div>
+      <div class="log-view" id="log-view"></div>
+    </section>
+
+    <!-- User modal -->
+    <div class="modal-back" id="user-modal-back" hidden>
+      <div class="modal">
+        <button class="modal-close" id="user-modal-close">&times;</button>
+        <div id="user-modal-content"></div>
+      </div>
+    </div>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>VGS Money — вход</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="login-body">
+  <form class="login-card" method="post" action="/login">
+    <div class="login-logo">VGS Money</div>
+    <div class="login-sub">Панель управления</div>
+    <input type="password" name="password" placeholder="Пароль" autofocus required>
+    {% if error %}<div class="login-err">{{ error }}</div>{% endif %}
+    <button type="submit">Войти</button>
+  </form>
+</body>
+</html>

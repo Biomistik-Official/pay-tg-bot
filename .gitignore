@@ -45,3 +45,11 @@ CLAUDE.md
 run-test.bat
 .env.test
 .env.test.example
+
+# Dashboard secrets (никогда не пушить)
+dashboard/.password
+dashboard/.secret
+
+# Батники
+run-dashboard.bat
+run-dashboard-test.bat
