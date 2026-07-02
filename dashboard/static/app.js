@@ -52,6 +52,13 @@ function opTag(op) {
   return escapeHtml(op);
 }
 
+// --- мобильное меню (гамбургер) ---
+function closeMenu() { document.body.classList.remove("menu-open"); }
+const burger = $("#burger");
+const overlay = $("#menu-overlay");
+if (burger) burger.addEventListener("click", () => document.body.classList.toggle("menu-open"));
+if (overlay) overlay.addEventListener("click", closeMenu);
+
 // --- переключение вкладок ---
 $$(".nav-btn").forEach(btn => {
   btn.addEventListener("click", () => {
@@ -59,6 +66,7 @@ $$(".nav-btn").forEach(btn => {
     $$(".tab").forEach(t => t.classList.remove("active"));
     btn.classList.add("active");
     $("#tab-" + btn.dataset.tab).classList.add("active");
+    closeMenu(); // на телефоне закрываем меню после выбора
     onTabChange(btn.dataset.tab);
   });
 });
@@ -121,13 +129,13 @@ function align(series, days, key) {
 
 function chartTheme() {
   return {
-    grid: "#262f3d",
-    text: "#8b98a9",
-    accent: "#7c5cff",
-    accent2: "#5aa9ff",
-    ok: "#2ecc71",
-    warn: "#f5a524",
-    err: "#ef4444",
+    grid: "#3a231b",
+    text: "#b08b7f",
+    accent: "#c8102e",
+    accent2: "#e63950",
+    ok: "#4fbf87",
+    warn: "#e0a54b",
+    err: "#e63950",
   };
 }
 
@@ -143,9 +151,11 @@ function renderActivity(ts) {
       labels: days,
       datasets: [
         { label: "Регистрации", data: regs, borderColor: t.accent,
-          backgroundColor: "rgba(124,92,255,0.15)", tension: 0.35, fill: true },
-        { label: "Транзакции", data: tx, borderColor: t.accent2,
-          backgroundColor: "rgba(90,169,255,0.10)", tension: 0.35, fill: true },
+          backgroundColor: "rgba(200,16,46,0.18)", tension: 0.35, fill: true,
+          pointBackgroundColor: t.accent },
+        { label: "Транзакции", data: tx, borderColor: "#e0a54b",
+          backgroundColor: "rgba(224,165,75,0.10)", tension: 0.35, fill: true,
+          pointBackgroundColor: "#e0a54b" },
       ]
     },
     options: chartOpts(),
@@ -185,11 +195,11 @@ function renderClubs(rows) {
   const t = chartTheme();
   const labels = rows.map(r => r.club || "—");
   const data = rows.map(r => r.c);
-  const palette = [t.accent, t.accent2, t.ok, t.warn, t.err, "#c084fc", "#38bdf8"];
+  const palette = ["#c8102e", "#e63950", "#ff8a5c", "#e0a54b", "#a01828", "#ff6b7f", "#7a1420"];
   if (chartClubs) chartClubs.destroy();
   chartClubs = new Chart($("#chart-clubs"), {
     type: "doughnut",
-    data: { labels, datasets: [{ data, backgroundColor: palette, borderColor: "#151a22" }] },
+    data: { labels, datasets: [{ data, backgroundColor: palette, borderColor: "#241813" }] },
     options: {
       responsive: true,
       plugins: {
