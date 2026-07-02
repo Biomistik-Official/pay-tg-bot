@@ -50,6 +50,5 @@ run-test.bat
 dashboard/.password
 dashboard/.secret
 
-# Батники
-run-dashboard.bat
+# Тестовый батник дашборда (только локально)
 run-dashboard-test.bat
