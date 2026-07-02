@@ -40,3 +40,8 @@ Thumbs.db
 
 # Claude
 CLAUDE.md
+
+# Test environment (local only)
+run-test.bat
+.env.test
+.env.test.example
