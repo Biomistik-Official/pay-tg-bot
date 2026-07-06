@@ -125,3 +125,11 @@ def cancel_staff_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="staff_quests_menu"))
     return builder.as_markup()
+
+
+def staff_role_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура вкладки «Роль» для Staff."""
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="📋 Квесты", callback_data="staff_quests_menu"))
+    builder.row(InlineKeyboardButton(text="⬅️ Главное меню", callback_data="main_menu"))
+    return builder.as_markup()

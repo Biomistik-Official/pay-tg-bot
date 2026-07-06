@@ -41,9 +41,7 @@ async def admin_requests_menu(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-# ──────────────────────────────────────────────
 # Активные (ожидающие) заявки
-# ──────────────────────────────────────────────
 
 @router.callback_query(F.data == "pending_requests")
 async def show_pending_requests(callback: CallbackQuery) -> None:
@@ -82,9 +80,7 @@ async def show_pending_requests(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-# ──────────────────────────────────────────────
 # Одобрение заявки
-# ──────────────────────────────────────────────
 
 @router.callback_query(F.data.startswith("approve_req:"))
 async def approve_request(callback: CallbackQuery, bot: Bot) -> None:
@@ -186,9 +182,7 @@ async def approve_request(callback: CallbackQuery, bot: Bot) -> None:
         )
 
 
-# ──────────────────────────────────────────────
 # Отклонение заявки — выбор способа
-# ──────────────────────────────────────────────
 
 @router.callback_query(F.data.startswith("reject_req:"))
 async def reject_request_choose(callback: CallbackQuery) -> None:
@@ -217,9 +211,7 @@ async def reject_request_choose(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-# ──────────────────────────────────────────────
 # Отклонение без причины
-# ──────────────────────────────────────────────
 
 @router.callback_query(F.data.startswith("reject_req_no_reason:"))
 async def reject_request_no_reason(callback: CallbackQuery, bot: Bot) -> None:
@@ -232,9 +224,7 @@ async def reject_request_no_reason(callback: CallbackQuery, bot: Bot) -> None:
     await _do_reject_request(callback, bot, request_id, reason=None)
 
 
-# ──────────────────────────────────────────────
 # Отклонение с причиной — запрос текста
-# ──────────────────────────────────────────────
 
 @router.callback_query(F.data.startswith("reject_req_with_reason:"))
 async def reject_request_ask_reason(callback: CallbackQuery, state: FSMContext) -> None:
@@ -267,9 +257,7 @@ async def reject_request_ask_reason(callback: CallbackQuery, state: FSMContext) 
     await callback.answer()
 
 
-# ──────────────────────────────────────────────
 # Отклонение с причиной — обработка текста
-# ──────────────────────────────────────────────
 
 @router.message(RejectRequest.waiting_reason)
 async def reject_request_reason_entered(message: Message, state: FSMContext, bot: Bot) -> None:
@@ -313,9 +301,7 @@ async def reject_request_reason_entered(message: Message, state: FSMContext, bot
     await _do_reject_request(_FakeCallback(message), bot, request_id, reason=reason)
 
 
-# ──────────────────────────────────────────────
 # Общая логика отклонения заявки
-# ──────────────────────────────────────────────
 
 async def _do_reject_request(callback, bot: Bot, request_id: int, reason: str | None) -> None:
     """Отклонить заявку и уведомить пользователя."""
@@ -410,9 +396,7 @@ async def _do_reject_request(callback, bot: Bot, request_id: int, reason: str | 
         )
 
 
-# ──────────────────────────────────────────────
 # История заявок
-# ──────────────────────────────────────────────
 
 @router.callback_query(F.data.startswith("requests_history:"))
 async def show_requests_history(callback: CallbackQuery) -> None:

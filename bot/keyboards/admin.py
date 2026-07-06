@@ -36,9 +36,7 @@ def admin_back_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-# ──────────────────────────────────────────────
 # Пользователи
-# ──────────────────────────────────────────────
 
 def admin_users_keyboard(users: list[dict], offset: int, total: int, page_size: int = 10) -> InlineKeyboardMarkup:
     """Меню управления пользователями с алфавитным списком."""
@@ -100,15 +98,17 @@ def user_profile_admin_keyboard(telegram_id: int, is_blocked: bool) -> InlineKey
         InlineKeyboardButton(text="🎫 Тикеты", callback_data=f"manage_tickets:{telegram_id}"),
         InlineKeyboardButton(text="⭐ Баллы", callback_data=f"manage_points:{telegram_id}"),
     )
+    builder.row(
+        InlineKeyboardButton(text="💰 Рубли", callback_data=f"manage_rubles:{telegram_id}"),
+        InlineKeyboardButton(text="🌟 Звёзды", callback_data=f"manage_stars:{telegram_id}"),
+    )
     builder.row(InlineKeyboardButton(text="⚖️ Модерация", callback_data=f"user_moderation:{telegram_id}"))
     builder.row(InlineKeyboardButton(text="📊 История", callback_data=f"user_history:{telegram_id}:0"))
     builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_users"))
     return builder.as_markup()
 
 
-# ──────────────────────────────────────────────
 # Управление валютой
-# ──────────────────────────────────────────────
 
 def manage_tickets_keyboard() -> InlineKeyboardMarkup:
     """Меню управления тикетами."""
@@ -152,6 +152,30 @@ def manage_currency_from_profile_keyboard(telegram_id: int, currency: str) -> In
     return builder.as_markup()
 
 
+def manage_admin_currency_keyboard(telegram_id: int, currency: str) -> InlineKeyboardMarkup:
+    """Управление админ-валютой (рубли / звёзды) из профиля пользователя."""
+    builder = InlineKeyboardBuilder()
+    if currency == "rubles":
+        emoji, label = "💰", "рубли"
+    else:
+        emoji, label = "🌟", "звёзды"
+
+    builder.row(InlineKeyboardButton(
+        text=f"➕ Выдать {label}",
+        callback_data=f"give_{currency}_to:{telegram_id}"
+    ))
+    builder.row(InlineKeyboardButton(
+        text=f"➖ Снять {label}",
+        callback_data=f"take_{currency}_from:{telegram_id}"
+    ))
+    builder.row(InlineKeyboardButton(
+        text=f"🔄 Установить баланс",
+        callback_data=f"set_{currency}_for:{telegram_id}"
+    ))
+    builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"view_user:{telegram_id}"))
+    return builder.as_markup()
+
+
 def user_moderation_keyboard(telegram_id: int) -> InlineKeyboardMarkup:
     """Меню модерации пользователя (Анварны и Анмуты)."""
     builder = InlineKeyboardBuilder()
@@ -173,9 +197,7 @@ def user_moderation_keyboard(telegram_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-# ──────────────────────────────────────────────
 # Заявки
-# ──────────────────────────────────────────────
 
 def admin_requests_keyboard() -> InlineKeyboardMarkup:
     """Меню раздела заявок."""
@@ -279,9 +301,7 @@ def ticket_type_admin_keyboard(action: str, telegram_id: int = None) -> InlineKe
     return builder.as_markup()
 
 
-# ──────────────────────────────────────────────
 # To-Do лист магазина
-# ──────────────────────────────────────────────
 
 def shop_order_action_keyboard(order_id: int) -> InlineKeyboardMarkup:
     """Кнопки действий с заявкой магазина."""
@@ -339,9 +359,7 @@ def todo_history_nav_keyboard(offset: int, total: int, page_size: int = 5) -> In
     return builder.as_markup()
 
 
-# ──────────────────────────────────────────────
 # Настройки магазина (Admin)
-# ──────────────────────────────────────────────
 
 def admin_shop_settings_keyboard() -> InlineKeyboardMarkup:
     """Основное меню настроек магазина."""
@@ -418,28 +436,32 @@ def admin_shop_roulette_cost_keyboard(settings: dict) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-# ────────────────────────────────────────────
 # Управление Staff
-# ────────────────────────────────────────────
 
 def admin_staff_keyboard() -> InlineKeyboardMarkup:
     """Меню управления Staff."""
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="➕ Добавить Staff", callback_data="staff_add"))
-    builder.row(InlineKeyboardButton(text="📜 Список Staff", callback_data="staff_list"))
+    builder.row(InlineKeyboardButton(text="📜 Список Staff",   callback_data="staff_list"))
+    builder.row(
+        InlineKeyboardButton(text="🎖 Роли Staff",         callback_data="admin_ranks"),
+        InlineKeyboardButton(text="⚙️ Коэффициенты Staff", callback_data="admin_coefs"),
+    )
     builder.row(InlineKeyboardButton(text="⬅️ Админ-панель", callback_data="admin_panel"))
     return builder.as_markup()
 
 
 def staff_list_keyboard(staff_list: list[dict]) -> InlineKeyboardMarkup:
     """Список Staff с возможностью просмотра каждого."""
+    from bot.utils.ranks import rank_emoji, DEFAULT_RANK
     builder = InlineKeyboardBuilder()
     for member in staff_list:
         nick = member["nickname"]
         if len(nick) > 15:
             nick = nick[:12] + "..."
+        r = member.get("rank") or DEFAULT_RANK
         builder.row(InlineKeyboardButton(
-            text=f"🛠 {nick}",
+            text=f"{rank_emoji(r)} {nick}",
             callback_data=f"staff_view:{member['telegram_id']}"
         ))
     builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_staff"))
@@ -450,8 +472,83 @@ def staff_member_keyboard(telegram_id: int) -> InlineKeyboardMarkup:
     """Действия с конкретным Staff."""
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="📊 Статистика", callback_data=f"staff_stats:{telegram_id}"))
+    builder.row(InlineKeyboardButton(text="🎖 Назначить/изменить ранг", callback_data=f"staff_set_rank:{telegram_id}"))
+    builder.row(InlineKeyboardButton(text="🕓 История ранга", callback_data=f"staff_rank_history:{telegram_id}"))
     builder.row(InlineKeyboardButton(text="❌ Снять роль Staff", callback_data=f"staff_remove:{telegram_id}"))
     builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="staff_list"))
+    return builder.as_markup()
+
+
+# Управление рангами Staff (Owner only)
+
+def admin_ranks_menu_keyboard() -> InlineKeyboardMarkup:
+    """Меню «Управление ролями Staff»."""
+    from bot.utils.ranks import RANK_ORDER, RANK_META
+    builder = InlineKeyboardBuilder()
+    for rank in RANK_ORDER:
+        meta = RANK_META[rank]
+        builder.row(InlineKeyboardButton(
+            text=f"{meta['emoji']} {meta['name']} — список",
+            callback_data=f"admin_ranks_list:{rank}",
+        ))
+    builder.row(InlineKeyboardButton(text="👥 Все Staff", callback_data="admin_ranks_list:all"))
+    builder.row(InlineKeyboardButton(text="⬅️ Управление Staff", callback_data="admin_staff"))
+    return builder.as_markup()
+
+
+def admin_ranks_list_keyboard(staff_list: list[dict], filter_rank: str) -> InlineKeyboardMarkup:
+    """Список Staff (опционально с фильтром по рангу) для назначения/изменения ранга."""
+    from bot.utils.ranks import rank_emoji, DEFAULT_RANK
+    builder = InlineKeyboardBuilder()
+    for member in staff_list:
+        r = member.get("rank") or DEFAULT_RANK
+        nick = member["nickname"]
+        if len(nick) > 15:
+            nick = nick[:12] + "..."
+        builder.row(InlineKeyboardButton(
+            text=f"{rank_emoji(r)} {nick}",
+            callback_data=f"staff_set_rank:{member['telegram_id']}"
+        ))
+    builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_ranks"))
+    return builder.as_markup()
+
+
+def rank_pick_keyboard(telegram_id: int, current: str) -> InlineKeyboardMarkup:
+    """Выбор нового ранга для Staff. Отмечает текущий ранг ✅."""
+    from bot.utils.ranks import RANK_ORDER, RANK_META
+    builder = InlineKeyboardBuilder()
+    for rank in RANK_ORDER:
+        meta = RANK_META[rank]
+        mark = "✅ " if rank == current else ""
+        builder.row(InlineKeyboardButton(
+            text=f"{mark}{meta['emoji']} {meta['name']}",
+            callback_data=f"staff_rank_apply:{telegram_id}:{rank}"
+        ))
+    builder.row(InlineKeyboardButton(text="⬅️ К профилю Staff", callback_data=f"staff_view:{telegram_id}"))
+    return builder.as_markup()
+
+
+def rank_history_keyboard(telegram_id: int) -> InlineKeyboardMarkup:
+    """Кнопка назад из истории ранга."""
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="⬅️ К профилю Staff", callback_data=f"staff_view:{telegram_id}"))
+    return builder.as_markup()
+
+
+# Коэффициенты рангов Staff (Owner only)
+
+def admin_coefs_keyboard(coefficients: dict) -> InlineKeyboardMarkup:
+    """Меню «Коэффициенты Staff». Показывает текущий множитель у каждого ранга."""
+    from bot.utils.ranks import RANK_ORDER, RANK_META
+    builder = InlineKeyboardBuilder()
+    for rank in RANK_ORDER:
+        meta = RANK_META[rank]
+        coef = coefficients.get(rank, meta["default_coef"])
+        builder.row(InlineKeyboardButton(
+            text=f"{meta['emoji']} {meta['name']} — ×{coef:g}",
+            callback_data=f"admin_coef_edit:{rank}"
+        ))
+    builder.row(InlineKeyboardButton(text="⬅️ Управление Staff", callback_data="admin_staff"))
     return builder.as_markup()
 
 
@@ -465,9 +562,7 @@ def staff_remove_confirm_keyboard(telegram_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-# ────────────────────────────────────────────
 # Квесты (Admin)
-# ────────────────────────────────────────────
 
 def admin_quests_keyboard() -> InlineKeyboardMarkup:
     """Меню управления квестами."""
@@ -520,6 +615,10 @@ def quest_edit_field_keyboard(quest_id: int) -> InlineKeyboardMarkup:
             text=label,
             callback_data=f"quest_edit_field:{quest_id}:{key}"
         ))
+    builder.row(InlineKeyboardButton(
+        text="🎯 Тип награды (переключить)",
+        callback_data=f"quest_toggle_mode:{quest_id}"
+    ))
     builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"quest_detail:{quest_id}"))
     return builder.as_markup()
 
@@ -559,9 +658,7 @@ def submissions_nav_keyboard(offset: int, total: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-# ────────────────────────────────────────────
 # Объявления (Admin)
-# ────────────────────────────────────────────
 
 def announcement_type_keyboard() -> InlineKeyboardMarkup:
     """Выбор типа объявления."""

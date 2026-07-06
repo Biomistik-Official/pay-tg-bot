@@ -24,9 +24,7 @@ def _is_owner(callback: CallbackQuery) -> bool:
     return callback.from_user.id == config.owner_id
 
 
-# ──────────────────────────────────────────────
 # Главное меню управления баллами
-# ──────────────────────────────────────────────
 
 @router.callback_query(F.data == "admin_points")
 async def admin_points_menu(callback: CallbackQuery) -> None:
@@ -63,9 +61,7 @@ async def manage_points_from_profile(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-# ──────────────────────────────────────────────
 # Инициализация операций из профиля пользователя
-# ──────────────────────────────────────────────
 
 @router.callback_query(F.data.startswith("give_points_to:"))
 async def give_points_to_user(callback: CallbackQuery, state: FSMContext) -> None:
@@ -118,9 +114,7 @@ async def set_points_for_user(callback: CallbackQuery, state: FSMContext) -> Non
     await callback.answer()
 
 
-# ──────────────────────────────────────────────
 # Выдать / Снять баллы (с запросом ID)
-# ──────────────────────────────────────────────
 
 @router.callback_query(F.data == "give_points")
 async def give_points_start(callback: CallbackQuery, state: FSMContext) -> None:
@@ -170,9 +164,7 @@ async def set_points_start(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
-# ──────────────────────────────────────────────
 # FSM обработчики для баллов
-# ──────────────────────────────────────────────
 
 @router.message(ManagePoints.waiting_user_id)
 async def points_get_user_id(message: Message, state: FSMContext) -> None:

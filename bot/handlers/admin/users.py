@@ -58,9 +58,7 @@ async def admin_users_menu(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-# ──────────────────────────────────────────────
 # Поиск пользователя
-# ──────────────────────────────────────────────
 
 @router.callback_query(F.data == "search_user_nick")
 async def search_by_nick(callback: CallbackQuery, state: FSMContext) -> None:
@@ -159,9 +157,7 @@ async def view_user(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-# ──────────────────────────────────────────────
 # Блокировка / Разблокировка
-# ──────────────────────────────────────────────
 
 @router.callback_query(F.data.startswith("block_user:"))
 async def block_user(callback: CallbackQuery, bot: Bot) -> None:
@@ -207,9 +203,7 @@ async def unblock_user(callback: CallbackQuery, bot: Bot) -> None:
     await view_user(callback)
 
 
-# ──────────────────────────────────────────────
 # Изменение никнейма
-# ──────────────────────────────────────────────
 
 @router.callback_query(F.data.startswith("change_nick:"))
 async def change_nickname_start(callback: CallbackQuery, state: FSMContext) -> None:
@@ -260,9 +254,7 @@ async def process_change_nickname(message: Message, state: FSMContext) -> None:
     )
 
 
-# ──────────────────────────────────────────────
 # Изменение тега Brawl Stars
-# ──────────────────────────────────────────────
 
 @router.callback_query(F.data.startswith("change_tag:"))
 async def change_tag_start(callback: CallbackQuery, state: FSMContext) -> None:
@@ -366,9 +358,7 @@ async def process_change_tag(message: Message, state: FSMContext) -> None:
         )
 
 
-# ──────────────────────────────────────────────
 # История операций пользователя (для Admin)
-# ──────────────────────────────────────────────
 
 @router.callback_query(F.data.startswith("user_history:"))
 async def view_user_history(callback: CallbackQuery) -> None:
@@ -416,9 +406,7 @@ async def view_user_history(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-# ──────────────────────────────────────────────
 # Модерация (Анварны и Анмуты)
-# ──────────────────────────────────────────────
 
 @router.callback_query(F.data.startswith("user_moderation:"))
 async def user_moderation(callback: CallbackQuery) -> None:

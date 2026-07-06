@@ -39,9 +39,7 @@ def _ticket_name(key: str) -> tuple:
     return TICKET_NAMES_SHORT.get(key, ("🎫", key.capitalize()))
 
 
-# ──────────────────────────────────────────────
 # Главное меню магазина
-# ──────────────────────────────────────────────
 
 @router.callback_query(F.data == "shop_main")
 async def shop_main(callback: CallbackQuery, state: FSMContext) -> None:
@@ -61,9 +59,7 @@ async def shop_main(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
-# ──────────────────────────────────────────────
 # Магазин за тикеты
-# ──────────────────────────────────────────────
 
 @router.callback_query(F.data == "shop_tickets")
 async def shop_tickets_menu(callback: CallbackQuery) -> None:
@@ -241,9 +237,7 @@ async def shop_confirm_buy(callback: CallbackQuery, bot: Bot) -> None:
     logger.info(f"Shop purchase: {user['nickname']} купил {name} за {cost} {t_name}")
 
 
-# ──────────────────────────────────────────────
 # Магазин за баллы
-# ──────────────────────────────────────────────
 
 @router.callback_query(F.data == "shop_points")
 async def shop_points_menu(callback: CallbackQuery, state: FSMContext) -> None:
@@ -264,9 +258,7 @@ async def shop_points_menu(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
-# ──────────────────────────────────────────────
 # Обмен баллов на тикеты
-# ──────────────────────────────────────────────
 
 @router.callback_query(F.data == "shop_exchange")
 async def shop_exchange_menu(callback: CallbackQuery, state: FSMContext) -> None:
@@ -462,9 +454,7 @@ async def shop_exchange_confirm(callback: CallbackQuery, state: FSMContext, bot:
     logger.info(f"Shop exchange: {user['nickname']} обменял {total_cost:g} баллов на {amount} {t_name}")
 
 
-# ──────────────────────────────────────────────
 # Вывод баллов в деньги
-# ──────────────────────────────────────────────
 
 @router.callback_query(F.data == "shop_withdraw")
 async def shop_withdraw_menu(callback: CallbackQuery, state: FSMContext) -> None:

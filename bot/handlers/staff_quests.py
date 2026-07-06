@@ -12,9 +12,11 @@ from bot.keyboards.staff import (
     quest_detail_staff_keyboard, my_quests_keyboard,
     quest_submit_keyboard, quest_submitted_keyboard,
     quest_history_keyboard, submit_content_keyboard,
-    cancel_staff_keyboard,
+    cancel_staff_keyboard, staff_role_keyboard,
 )
+from bot.utils.ranks import rank_label, rank_description
 from bot.states.forms import SubmitQuest
+from bot.utils.ranks import apply_coefficient
 
 router = Router()
 
@@ -45,7 +47,25 @@ def _reward_str(reward_type: str, amount: float) -> str:
     return f"{amount:g} {label}"
 
 
-# ── Главное меню квестов ──────────────────────────────────────────
+async def _coef_reward_note(q: dict, user_id: int) -> str:
+    """
+    Для квеста с наградой «с коэффициентом» — персональная строка
+    (ранг Staff, коэффициент, итоговая награда для него).
+    Для обычной награды возвращает "".
+    """
+    if (q.get("reward_mode") or "flat") != "coefficient":
+        return ""
+    rank = await queries.get_staff_rank(user_id)
+    coef = await queries.get_rank_coefficient(rank)
+    final = apply_coefficient(q["reward_type"], q["reward_amount"], coef)
+    return (
+        f"\n\U0001f396 Ваш ранг: <b>{rank_label(rank)}</b>\n"
+        f"\U0001f4c8 Коэффициент: <b>×{coef:g}</b>\n"
+        f"✨ Ваша награда: <b>{_reward_str(q['reward_type'], final)}</b>"
+    )
+
+
+# Главное меню квестов
 
 @router.callback_query(F.data == "staff_quests_menu")
 async def quests_menu(callback: CallbackQuery) -> None:
@@ -60,14 +80,14 @@ async def quests_menu(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-# ── Noop (заглушка для неактивных кнопок) ────────────────────────
+# Noop (заглушка для неактивных кнопок)
 
 @router.callback_query(F.data == "staff_quest_noop")
 async def quest_noop(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-# ── Активные квесты ───────────────────────────────────────────────
+# Активные квесты
 
 @router.callback_query(F.data.startswith("staff_active_quests:"))
 async def show_active_quests(callback: CallbackQuery) -> None:
@@ -93,7 +113,7 @@ async def show_active_quests(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-# ── Детали квеста ─────────────────────────────────────────────────
+# Детали квеста
 
 @router.callback_query(F.data.startswith("staff_quest_detail:"))
 async def show_quest_detail(callback: CallbackQuery) -> None:
@@ -114,6 +134,7 @@ async def show_quest_detail(callback: CallbackQuery) -> None:
     deadline = q["deadline"] or "—"
     reward = _reward_str(q["reward_type"], q["reward_amount"])
     slots_text = f"{executors}/{q['max_executors']}"
+    coef_note = await _coef_reward_note(q, user_id)
 
     text = (
         f"\U0001f4cb <b>{q['title']}</b>\n\n"
@@ -121,6 +142,7 @@ async def show_quest_detail(callback: CallbackQuery) -> None:
         f"\U0001f381 Награда: <b>{reward}</b>\n"
         f"\U0001f465 Исполнители: <b>{slots_text}</b>\n"
         f"\U0001f4c5 Срок: <b>{deadline}</b>"
+        f"{coef_note}"
     )
     await callback.message.edit_text(
         text,
@@ -130,7 +152,7 @@ async def show_quest_detail(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-# ── Взять квест ───────────────────────────────────────────────────
+# Взять квест
 
 @router.callback_query(F.data.startswith("staff_take_quest:"))
 async def take_quest(callback: CallbackQuery) -> None:
@@ -148,12 +170,14 @@ async def take_quest(callback: CallbackQuery) -> None:
     deadline = q["deadline"] or "—"
     reward = _reward_str(q["reward_type"], q["reward_amount"])
     slots_text = f"{executors}/{q['max_executors']}"
+    coef_note = await _coef_reward_note(q, user_id)
     text = (
         f"\U0001f4cb <b>{q['title']}</b>\n\n"
         f"\U0001f4c4 {q['description']}\n\n"
         f"\U0001f381 Награда: <b>{reward}</b>\n"
         f"\U0001f465 Исполнители: <b>{slots_text}</b>\n"
         f"\U0001f4c5 Срок: <b>{deadline}</b>"
+        f"{coef_note}"
     )
     await callback.message.edit_text(
         text,
@@ -162,7 +186,7 @@ async def take_quest(callback: CallbackQuery) -> None:
     )
 
 
-# ── Мои квесты ────────────────────────────────────────────────────
+# Мои квесты
 
 @router.callback_query(F.data == "staff_my_quests")
 async def my_quests(callback: CallbackQuery) -> None:
@@ -178,7 +202,7 @@ async def my_quests(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-# ── Детали своего квеста ──────────────────────────────────────────
+# Детали своего квеста
 
 @router.callback_query(F.data.startswith("staff_my_quest_detail:"))
 async def my_quest_detail(callback: CallbackQuery) -> None:
@@ -197,11 +221,18 @@ async def my_quest_detail(callback: CallbackQuery) -> None:
     }
     status = status_map.get(a["status"], a["status"])
     deadline = a.get("deadline") or "—"
+    quest_like = {
+        "reward_type": a["reward_type"],
+        "reward_amount": a["reward_amount"],
+        "reward_mode": a.get("reward_mode"),
+    }
+    coef_note = await _coef_reward_note(quest_like, user_id)
     text = (
         f"\U0001f4cb <b>{a['title']}</b>\n\n"
         f"\U0001f381 Награда: <b>{reward}</b>\n"
         f"\U0001f4c5 Срок: <b>{deadline}</b>\n"
         f"Статус: <b>{status}</b>"
+        f"{coef_note}"
     )
     if a["status"] == "taken":
         kb = quest_submit_keyboard(assignment_id)
@@ -216,7 +247,7 @@ async def my_quest_detail(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-# ── Отправить на проверку (FSM) ───────────────────────────────────
+# Отправить на проверку (FSM)
 
 @router.callback_query(F.data.startswith("staff_submit_quest:"))
 async def start_submit_quest(callback: CallbackQuery, state: FSMContext) -> None:
@@ -320,7 +351,7 @@ async def confirm_submit(callback: CallbackQuery, state: FSMContext, bot: Bot) -
     await callback.answer()
 
 
-# ── История квестов ───────────────────────────────────────────────
+# История квестов
 
 @router.callback_query(F.data == "staff_quest_history")
 async def show_quest_history(callback: CallbackQuery) -> None:
@@ -435,5 +466,40 @@ async def abandon_quest(callback: CallbackQuery, bot: Bot) -> None:
                 except Exception:
                     pass
                 await asyncio.sleep(0.05)
-                
+
         asyncio.create_task(broadcast_abandoned())
+
+
+# Вкладка «Роль»
+
+@router.callback_query(F.data == "staff_role")
+async def show_staff_role(callback: CallbackQuery) -> None:
+    """Показать текущий ранг, коэффициент и статистику Staff."""
+    user_id, ok = await _get_user_id(callback.from_user.id)
+    if not ok:
+        return await callback.answer("⛔ Нет доступа.", show_alert=True)
+
+    rank = await queries.get_staff_rank(user_id)
+    coef = await queries.get_rank_coefficient(rank)
+    stats = await queries.get_staff_stats(user_id)
+    place, total = await queries.get_staff_rank_place(callback.from_user.id)
+
+    place_text = f"{place} из {total}" if place else "—"
+
+    text = (
+        f"🎖 <b>Ваша роль в Staff</b>\n\n"
+        f"🎖 Текущая роль: <b>{rank_label(rank)}</b>\n"
+        f"📈 Коэффициент награды: <b>×{coef:g}</b>\n\n"
+        f"📝 <i>{rank_description(rank)}</i>\n\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"📋 Выполнено квестов: <b>{stats['completed']}</b>\n"
+        f"⭐ Всего заработано баллов: <b>{stats['earned_points']:g}</b>\n"
+        f"🎫 Всего заработано тикетов: <b>{stats['earned_tickets']:g}</b>\n"
+        f"🏆 Место в рейтинге Staff: <b>{place_text}</b>"
+    )
+    await callback.message.edit_text(
+        text,
+        reply_markup=staff_role_keyboard(),
+        parse_mode="HTML",
+    )
+    await callback.answer()

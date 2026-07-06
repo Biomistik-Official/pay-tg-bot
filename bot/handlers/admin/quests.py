@@ -15,6 +15,8 @@ from bot.keyboards.admin import (
     submissions_nav_keyboard, cancel_admin_keyboard,
 )
 from bot.states.forms import CreateQuest, EditQuest, RejectQuest
+from bot.utils.ranks import apply_coefficient, rank_label
+from bot.utils.logger import log_admin_action
 
 router = Router()
 
@@ -27,9 +29,19 @@ REWARD_TYPES = {
     "tickets_support":   "\U0001f381 Тикеты поддержки",
 }
 
+# Способы начисления награды
+REWARD_MODES = {
+    "flat":        "⭐ Обычная награда",
+    "coefficient": "\U0001f4c8 Награда с коэффициентом",
+}
+
 
 def _is_owner(uid: int) -> bool:
     return uid == config.owner_id
+
+
+def _reward_mode_label(mode: str) -> str:
+    return REWARD_MODES.get(mode, REWARD_MODES["flat"])
 
 
 async def _edit_or_reply(callback: CallbackQuery, text: str, reply_markup=None) -> None:
@@ -55,17 +67,19 @@ def _quest_text(q: dict) -> str:
     status = "\U0001f7e2 Активен" if q["status"] == "active" else "\U0001f534 Закрыт"
     deadline = q["deadline"] or "—"
     reward = _reward_label(q["reward_type"], q["reward_amount"])
+    mode = _reward_mode_label(q.get("reward_mode", "flat"))
     return (
         f"\U0001f4cb <b>{q['title']}</b>\n\n"
         f"\U0001f4c4 {q['description']}\n\n"
         f"\U0001f381 Награда: <b>{reward}</b>\n"
+        f"\U0001f3af Тип награды: <b>{mode}</b>\n"
         f"\U0001f465 Макс. исполнителей: <b>{q['max_executors']}</b>\n"
         f"\U0001f4c5 Срок: <b>{deadline}</b>\n"
         f"Статус: <b>{status}</b>"
     )
 
 
-# ── Меню ──────────────────────────────────────────────────────────
+# Меню
 
 @router.callback_query(F.data == "admin_quests")
 async def show_quests_menu(callback: CallbackQuery) -> None:
@@ -79,7 +93,7 @@ async def show_quests_menu(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-# ── Список квестов ────────────────────────────────────────────────
+# Список квестов
 
 @router.callback_query(F.data == "quest_list")
 async def show_quest_list(callback: CallbackQuery) -> None:
@@ -101,7 +115,7 @@ async def show_quest_list(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-# ── Детали квеста ─────────────────────────────────────────────────
+# Детали квеста
 
 @router.callback_query(F.data.startswith("quest_detail:"))
 async def show_quest_detail(callback: CallbackQuery) -> None:
@@ -119,7 +133,7 @@ async def show_quest_detail(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-# ── Статистика квеста ─────────────────────────────────────────────
+# Статистика квеста
 
 @router.callback_query(F.data.startswith("quest_stats:"))
 async def show_quest_stats(callback: CallbackQuery) -> None:
@@ -164,7 +178,7 @@ async def show_quest_stats(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-# ── Закрыть квест ─────────────────────────────────────────────────
+# Закрыть квест
 
 @router.callback_query(F.data.startswith("quest_close:"))
 async def close_quest(callback: CallbackQuery) -> None:
@@ -181,7 +195,7 @@ async def close_quest(callback: CallbackQuery) -> None:
     )
 
 
-# ── Удалить квест ─────────────────────────────────────────────────
+# Удалить квест
 
 @router.callback_query(F.data.startswith("quest_delete:"))
 async def ask_delete_quest(callback: CallbackQuery) -> None:
@@ -213,7 +227,7 @@ async def confirm_delete_quest(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-# ── Создать квест (FSM) ───────────────────────────────────────────
+# Создать квест (FSM)
 
 @router.callback_query(F.data == "quest_create")
 async def start_create_quest(callback: CallbackQuery, state: FSMContext) -> None:
@@ -222,7 +236,7 @@ async def start_create_quest(callback: CallbackQuery, state: FSMContext) -> None
     await state.set_state(CreateQuest.waiting_title)
     await _edit_or_reply(
         callback,
-        "\U0001f4dd <b>Создание квеста</b>\n\nШаг 1/6 — Введите <b>название</b> квеста:",
+        "\U0001f4dd <b>Создание квеста</b>\n\nШаг 1/7 — Введите <b>название</b> квеста:",
         reply_markup=cancel_admin_keyboard(),
     )
     await callback.answer()
@@ -238,7 +252,7 @@ async def cq_title(message: Message, state: FSMContext) -> None:
     await state.update_data(title=title)
     await state.set_state(CreateQuest.waiting_description)
     await message.answer(
-        "Шаг 2/6 — Введите <b>описание</b> квеста:",
+        "Шаг 2/7 — Введите <b>описание</b> квеста:",
         reply_markup=cancel_admin_keyboard(),
         parse_mode="HTML",
     )
@@ -257,7 +271,7 @@ async def cq_description(message: Message, state: FSMContext) -> None:
         builder.row(InlineKeyboardButton(text=label, callback_data=f"cq_rtype:{key}"))
     builder.row(InlineKeyboardButton(text="\u274c Отмена", callback_data="cancel_admin_form"))
     await message.answer(
-        "Шаг 3/6 — Выберите <b>тип награды</b>:",
+        "Шаг 3/7 — Выберите <b>тип награды</b>:",
         reply_markup=builder.as_markup(),
         parse_mode="HTML",
     )
@@ -272,7 +286,7 @@ async def cq_reward_type(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(CreateQuest.waiting_reward_amount)
     await _edit_or_reply(
         callback,
-        "Шаг 4/6 — Введите <b>количество</b> награды (число):",
+        "Шаг 4/7 — Введите <b>количество</b> награды (число):",
         reply_markup=cancel_admin_keyboard(),
     )
     await callback.answer()
@@ -289,12 +303,37 @@ async def cq_reward_amount(message: Message, state: FSMContext) -> None:
     except ValueError:
         return await message.answer("\u26a0\ufe0f Введите положительное число.", reply_markup=cancel_admin_keyboard())
     await state.update_data(reward_amount=amount)
-    await state.set_state(CreateQuest.waiting_max_executors)
+    await state.set_state(CreateQuest.waiting_reward_mode)
+    from aiogram.types import InlineKeyboardButton
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    builder = InlineKeyboardBuilder()
+    for key, label in REWARD_MODES.items():
+        builder.row(InlineKeyboardButton(text=label, callback_data=f"cq_rmode:{key}"))
+    builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_admin_form"))
     await message.answer(
-        "Шаг 5/6 — Введите <b>максимальное количество исполнителей</b>:",
-        reply_markup=cancel_admin_keyboard(),
+        "Шаг 5/7 — Выберите <b>тип награды</b>:\n\n"
+        "⭐ <b>Обычная награда</b> — все Staff получают одинаковую награду.\n"
+        "\U0001f4c8 <b>Награда с коэффициентом</b> — итоговая награда = базовая × коэффициент ранга Staff.",
+        reply_markup=builder.as_markup(),
         parse_mode="HTML",
     )
+
+
+@router.callback_query(F.data.startswith("cq_rmode:"), CreateQuest.waiting_reward_mode)
+async def cq_reward_mode(callback: CallbackQuery, state: FSMContext) -> None:
+    if not _is_owner(callback.from_user.id):
+        return await callback.answer("No access.", show_alert=True)
+    mode = callback.data.split(":")[1]
+    if mode not in REWARD_MODES:
+        mode = "flat"
+    await state.update_data(reward_mode=mode)
+    await state.set_state(CreateQuest.waiting_max_executors)
+    await _edit_or_reply(
+        callback,
+        "Шаг 6/7 — Введите <b>максимальное количество исполнителей</b>:",
+        reply_markup=cancel_admin_keyboard(),
+    )
+    await callback.answer()
 
 
 @router.message(CreateQuest.waiting_max_executors)
@@ -315,7 +354,7 @@ async def cq_max_exec(message: Message, state: FSMContext) -> None:
     builder.row(InlineKeyboardButton(text="\u23ed\ufe0f Без срока", callback_data="cq_no_deadline"))
     builder.row(InlineKeyboardButton(text="\u274c Отмена", callback_data="cancel_admin_form"))
     await message.answer(
-        "Шаг 6/6 — Введите <b>срок выполнения</b> (например, 30.06.2025) или нажмите «Без срока»:",
+        "Шаг 7/7 — Введите <b>срок выполнения</b> (например, 30.06.2025) или нажмите «Без срока»:",
         reply_markup=builder.as_markup(),
         parse_mode="HTML",
     )
@@ -347,6 +386,7 @@ async def _finalize_quest(target, state: FSMContext, deadline, bot: Bot) -> None
         max_executors=data["max_executors"],
         deadline=deadline,
         created_by=config.owner_id,
+        reward_mode=data.get("reward_mode", "flat"),
     )
     q = await queries.get_quest_by_id(quest_id)
     if hasattr(target, "answer"):
@@ -367,8 +407,10 @@ async def _finalize_quest(target, state: FSMContext, deadline, bot: Bot) -> None
         staff_ids = await queries.get_staff_telegram_ids()
         if staff_ids:
             reward = _reward_label(q["reward_type"], q["reward_amount"])
+            if q.get("reward_mode") == "coefficient":
+                reward += " × коэффициент ранга"
             deadline_val = q["deadline"] or "—"
-            
+
             notification_text = (
                 f"🆕 <b>Появился новый квест!</b>\n"
                 f"━━━━━━━━━━━━━━━━━━\n\n"
@@ -405,7 +447,7 @@ async def _finalize_quest(target, state: FSMContext, deadline, bot: Bot) -> None
         pass
 
 
-# ── Редактировать квест ───────────────────────────────────────────
+# Редактировать квест
 
 @router.callback_query(F.data.startswith("quest_edit:"))
 async def start_edit_quest(callback: CallbackQuery) -> None:
@@ -480,7 +522,28 @@ async def apply_edit_field(message: Message, state: FSMContext) -> None:
     )
 
 
-# ── Проверка квестов ──────────────────────────────────────────────
+# Переключить тип награды (обычная / с коэффициентом)
+
+@router.callback_query(F.data.startswith("quest_toggle_mode:"))
+async def toggle_reward_mode(callback: CallbackQuery) -> None:
+    if not _is_owner(callback.from_user.id):
+        return await callback.answer("No access.", show_alert=True)
+    quest_id = int(callback.data.split(":")[1])
+    q = await queries.get_quest_by_id(quest_id)
+    if not q:
+        return await callback.answer("Квест не найден.", show_alert=True)
+    new_mode = "coefficient" if (q.get("reward_mode") or "flat") == "flat" else "flat"
+    await queries.update_quest(quest_id, reward_mode=new_mode)
+    await callback.answer(f"Тип награды: {_reward_mode_label(new_mode)}", show_alert=True)
+    q = await queries.get_quest_by_id(quest_id)
+    await _edit_or_reply(
+        callback,
+        _quest_text(q),
+        reply_markup=quest_detail_admin_keyboard(quest_id, q["status"] == "active"),
+    )
+
+
+# Проверка квестов
 
 @router.callback_query(F.data.in_({"quest_submissions"}) | F.data.startswith("quest_submissions:"))
 async def show_submissions(callback: CallbackQuery) -> None:
@@ -520,7 +583,7 @@ async def show_submissions(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-# ── Одобрить ──────────────────────────────────────────────────────
+# Одобрить
 
 @router.callback_query(F.data.startswith("quest_approve:"))
 async def approve_quest(callback: CallbackQuery, bot) -> None:
@@ -543,28 +606,52 @@ async def approve_quest(callback: CallbackQuery, bot) -> None:
         if q_stats["approved"] >= q["max_executors"]:
             await queries.close_quest(quest_id)
 
-    # Начислить награду
+    # Начислить награду — с учётом ранга, если тип награды «с коэффициентом»
     reward_type = a["reward_type"]
-    reward_amount = a["reward_amount"]
+    base_amount = a["reward_amount"]
     user_db_id = a["user_db_id"]
-    await queries.update_user_balance(user_db_id, reward_type, "add", reward_amount)
+    reward_mode = a.get("reward_mode") or "flat"
+
+    if reward_mode == "coefficient":
+        rank = await queries.get_staff_rank(user_db_id)
+        coefficient = await queries.get_rank_coefficient(rank)
+        final_amount = apply_coefficient(reward_type, base_amount, coefficient)
+    else:
+        rank = None
+        coefficient = 1.0
+        final_amount = base_amount
+
+    await queries.update_user_balance(user_db_id, reward_type, "add", final_amount)
+    reason = f"Награда за квест: {a['title']}"
+    if reward_mode == "coefficient":
+        reason += f" (×{coefficient:g})"
     await queries.add_transaction(
         user_id=user_db_id,
         currency_type=reward_type,
         operation="add",
-        amount=reward_amount,
-        reason=f"Награда за квест: {a['title']}",
+        amount=final_amount,
+        reason=reason,
         performed_by=config.owner_id,
     )
+    # Сохранить применённый коэффициент и фактическую награду (журнал по квесту)
+    await queries.record_assignment_payout(assignment_id, coefficient, final_amount)
 
-    reward_label = _reward_label(reward_type, reward_amount)
+    reward_label = _reward_label(reward_type, final_amount)
+    coef_note = ""
+    if reward_mode == "coefficient":
+        coef_note = (
+            f"\n\n🎖 Ранг: <b>{rank_label(rank)}</b>\n"
+            f"📈 Коэффициент: <b>×{coefficient:g}</b>\n"
+            f"<i>Базовая награда: {_reward_label(reward_type, base_amount)}</i>"
+        )
     r_icon = "\u2b50" if reward_type == "points" else "\U0001f3ab"
     try:
         await bot.send_message(
             a["user_telegram_id"],
             f"\U0001f389 <b>Квест принят!</b>\n\n"
             f"Квест: <b>{a['title']}</b>\n\n"
-            f"Вам начислено:\n{r_icon} <b>{reward_label}</b>",
+            f"Вам начислено:\n{r_icon} <b>{reward_label}</b>"
+            f"{coef_note}",
             parse_mode="HTML",
         )
     except Exception:
@@ -593,7 +680,7 @@ async def approve_quest(callback: CallbackQuery, bot) -> None:
     await callback.answer()
 
 
-# ── Отклонить ─────────────────────────────────────────────────────
+# Отклонить
 
 @router.callback_query(F.data.startswith("quest_reject:"))
 async def ask_reject_reason(callback: CallbackQuery, state: FSMContext) -> None:
@@ -679,7 +766,7 @@ async def _do_reject(callback, bot, assignment_id: int, reason) -> None:
     await callback.answer()
 
 
-# ── Отмена формы ──────────────────────────────────────────────────
+# Отмена формы
 
 @router.callback_query(F.data == "cancel_admin_form")
 async def cancel_quest_form(callback: CallbackQuery, state: FSMContext) -> None:

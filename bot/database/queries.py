@@ -8,9 +8,7 @@ import aiosqlite
 from bot.database.models import get_db
 
 
-# ══════════════════════════════════════════════
 #  USERS
-# ══════════════════════════════════════════════
 
 async def create_user(
     telegram_id: int,
@@ -194,9 +192,7 @@ async def update_username(telegram_id: int, username: Optional[str]) -> None:
         await db.commit()
 
 
-# ══════════════════════════════════════════════
 #  TRANSACTIONS
-# ══════════════════════════════════════════════
 
 async def add_transaction(
     user_id: int,
@@ -285,9 +281,7 @@ async def count_user_transactions_by_type(user_id: int, currency_type: str) -> i
 
 
 
-# ══════════════════════════════════════════════
 #  REQUESTS
-# ══════════════════════════════════════════════
 
 async def create_request(
     user_id: int,
@@ -399,9 +393,7 @@ async def count_requests_history() -> int:
             return row[0] if row else 0
 
 
-# ══════════════════════════════════════════════
 #  STATISTICS
-# ══════════════════════════════════════════════
 
 async def get_statistics() -> dict:
     """Получить общую статистику системы."""
@@ -467,9 +459,7 @@ async def get_statistics() -> dict:
     }
 
 
-# ══════════════════════════════════════════════
 #  SHOP SETTINGS
-# ══════════════════════════════════════════════
 
 async def get_shop_settings() -> dict:
     """Получить все настройки магазина."""
@@ -499,9 +489,7 @@ async def update_shop_setting(key: str, value: str) -> None:
         await db.commit()
 
 
-# ══════════════════════════════════════════════
 #  SHOP ORDERS
-# ══════════════════════════════════════════════
 
 async def create_shop_order(user_id: int, order_type: str, details: str) -> int:
     """Создать заявку магазина. Возвращает ID заявки."""
@@ -594,9 +582,7 @@ async def count_pending_shop_orders() -> int:
             return row[0] if row else 0
 
 
-# ══════════════════════════════════════════════
 #  STAFF
-# ══════════════════════════════════════════════
 
 async def add_staff(user_id: int, granted_by: int) -> None:
     """Выдать пользователю роль Staff (или реактивировать)."""
@@ -663,8 +649,99 @@ async def get_all_staff() -> list[dict]:
             return [dict(r) for r in rows]
 
 
+async def get_staff_rank(user_id: int) -> str:
+    """Получить текущий ранг активного Staff (по внутреннему ID пользователя)."""
+    from bot.utils.ranks import DEFAULT_RANK
+    async with get_db() as db:
+        async with db.execute(
+            "SELECT rank FROM staff WHERE user_id = ? AND is_active = 1", (user_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            return (row[0] or DEFAULT_RANK) if row else DEFAULT_RANK
+
+
+async def set_staff_rank(user_id: int, new_rank: str, changed_by: int) -> Optional[str]:
+    """
+    Назначить/изменить ранг Staff. Возвращает предыдущий ранг (для журнала).
+    Записывает изменение в staff_rank_history.
+    """
+    from bot.utils.ranks import DEFAULT_RANK
+    async with get_db() as db:
+        async with db.execute(
+            "SELECT rank FROM staff WHERE user_id = ?", (user_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            old_rank = (row[0] or DEFAULT_RANK) if row else None
+
+        await db.execute(
+            "UPDATE staff SET rank = ? WHERE user_id = ?", (new_rank, user_id)
+        )
+        await db.execute(
+            """INSERT INTO staff_rank_history (user_id, old_rank, new_rank, changed_by)
+               VALUES (?, ?, ?, ?)""",
+            (user_id, old_rank, new_rank, changed_by)
+        )
+        await db.commit()
+        return old_rank
+
+
+async def get_staff_rank_history(user_id: int, limit: int = 20) -> list[dict]:
+    """Получить историю изменений ранга Staff."""
+    async with get_db() as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """SELECT h.*, u.nickname as changed_by_nickname
+               FROM staff_rank_history h
+               LEFT JOIN users u ON h.changed_by = u.telegram_id
+               WHERE h.user_id = ?
+               ORDER BY h.changed_at DESC
+               LIMIT ?""",
+            (user_id, limit)
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
+
+
+# Коэффициенты рангов
+
+async def get_rank_coefficient(rank: str) -> float:
+    """Получить коэффициент награды для ранга."""
+    from bot.utils.ranks import RANK_META, DEFAULT_RANK
+    default = RANK_META.get(rank, RANK_META[DEFAULT_RANK])["default_coef"]
+    async with get_db() as db:
+        async with db.execute(
+            "SELECT coefficient FROM staff_rank_coefficients WHERE rank = ?", (rank,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            return float(row[0]) if row else float(default)
+
+
+async def get_all_rank_coefficients() -> dict:
+    """Получить коэффициенты всех рангов ({rank: coefficient})."""
+    async with get_db() as db:
+        async with db.execute(
+            "SELECT rank, coefficient FROM staff_rank_coefficients"
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return {row[0]: float(row[1]) for row in rows}
+
+
+async def set_rank_coefficient(rank: str, coefficient: float) -> None:
+    """Изменить коэффициент награды для ранга."""
+    async with get_db() as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO staff_rank_coefficients (rank, coefficient) VALUES (?, ?)",
+            (rank, coefficient)
+        )
+        await db.commit()
+
+
 async def get_staff_stats(user_id: int) -> dict:
-    """Получить статистику Staff: выполнено квестов, баллы, тикеты, последняя активность."""
+    """
+    Получить статистику Staff: выполнено квестов, баллы, тикеты, последняя активность.
+    Баллы/тикеты считаются по фактически начисленной награде (с учётом коэффициента),
+    с откатом на базовую награду квеста для старых записей без paid_amount.
+    """
     async with get_db() as db:
         async with db.execute(
             """SELECT COUNT(*) FROM quest_assignments
@@ -674,7 +751,7 @@ async def get_staff_stats(user_id: int) -> dict:
             completed = (await cursor.fetchone())[0]
 
         async with db.execute(
-            """SELECT COALESCE(SUM(q.reward_amount), 0)
+            """SELECT COALESCE(SUM(COALESCE(qa.paid_amount, q.reward_amount)), 0)
                FROM quest_assignments qa
                JOIN quests q ON qa.quest_id = q.id
                WHERE qa.user_id = ? AND qa.status = 'approved' AND q.reward_type = 'points'""",
@@ -683,7 +760,7 @@ async def get_staff_stats(user_id: int) -> dict:
             earned_points = (await cursor.fetchone())[0]
 
         async with db.execute(
-            """SELECT COALESCE(SUM(q.reward_amount), 0)
+            """SELECT COALESCE(SUM(COALESCE(qa.paid_amount, q.reward_amount)), 0)
                FROM quest_assignments qa
                JOIN quests q ON qa.quest_id = q.id
                WHERE qa.user_id = ? AND qa.status = 'approved' AND q.reward_type LIKE 'tickets_%'""",
@@ -712,9 +789,10 @@ async def get_staff_leaderboard() -> list[dict]:
     async with get_db() as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
-            """SELECT u.nickname, u.telegram_id,
+            """SELECT u.nickname, u.telegram_id, s.rank,
                       COUNT(qa.id) as completed_quests,
-                      COALESCE(SUM(CASE WHEN q.reward_type='points' THEN q.reward_amount ELSE 0 END), 0) as earned_points
+                      COALESCE(SUM(CASE WHEN q.reward_type='points'
+                                        THEN COALESCE(qa.paid_amount, q.reward_amount) ELSE 0 END), 0) as earned_points
                FROM staff s
                JOIN users u ON s.user_id = u.id
                LEFT JOIN quest_assignments qa ON qa.user_id = s.user_id AND qa.status = 'approved'
@@ -727,9 +805,17 @@ async def get_staff_leaderboard() -> list[dict]:
             return [dict(r) for r in rows]
 
 
-# ══════════════════════════════════════════════
+async def get_staff_rank_place(telegram_id: int) -> tuple[int, int]:
+    """Вернуть (место, всего) Staff в рейтинге по выполненным квестам."""
+    board = await get_staff_leaderboard()
+    total = len(board)
+    for idx, row in enumerate(board, 1):
+        if row["telegram_id"] == telegram_id:
+            return idx, total
+    return 0, total
+
+
 #  QUESTS
-# ══════════════════════════════════════════════
 
 async def create_quest(
     title: str,
@@ -738,15 +824,17 @@ async def create_quest(
     reward_amount: float,
     max_executors: int,
     deadline: Optional[str],
-    created_by: int
+    created_by: int,
+    reward_mode: str = "flat",
 ) -> int:
     """Создать квест. Возвращает ID квеста."""
     async with get_db() as db:
         cursor = await db.execute(
             """INSERT INTO quests (title, description, reward_type, reward_amount,
-                                   max_executors, deadline, created_by)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (title, description, reward_type, reward_amount, max_executors, deadline, created_by)
+                                   reward_mode, max_executors, deadline, created_by)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (title, description, reward_type, reward_amount, reward_mode,
+             max_executors, deadline, created_by)
         )
         await db.commit()
         return cursor.lastrowid
@@ -788,7 +876,7 @@ async def get_all_quests() -> list[dict]:
 async def update_quest(quest_id: int, **fields) -> None:
     """Обновить поля квеста."""
     allowed = {"title", "description", "reward_type", "reward_amount",
-                "max_executors", "deadline", "status"}
+                "reward_mode", "max_executors", "deadline", "status"}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         return
@@ -858,9 +946,7 @@ async def get_approved_quest_executors(quest_id: int) -> list[dict]:
 
 
 
-# ══════════════════════════════════════════════
 #  QUEST ASSIGNMENTS
-# ══════════════════════════════════════════════
 
 async def take_quest(quest_id: int, user_id: int) -> bool:
     """Взять квест. Возвращает True при успехе, False если уже взят или лимит."""
@@ -911,7 +997,7 @@ async def get_assignment_by_id(assignment_id: int) -> Optional[dict]:
     async with get_db() as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
-            """SELECT qa.*, q.title, q.reward_type, q.reward_amount,
+            """SELECT qa.*, q.title, q.reward_type, q.reward_amount, q.reward_mode,
                       u.nickname, u.username, u.telegram_id as user_telegram_id,
                       u.id as user_db_id
                FROM quest_assignments qa
@@ -955,6 +1041,18 @@ async def approve_assignment(assignment_id: int, reviewed_by: int) -> None:
                SET status = 'approved', reviewed_at = datetime('now'), reviewed_by = ?
                WHERE id = ?""",
             (reviewed_by, assignment_id)
+        )
+        await db.commit()
+
+
+async def record_assignment_payout(assignment_id: int, coefficient: float, paid_amount: float) -> None:
+    """Записать применённый коэффициент и фактически начисленную награду за квест."""
+    async with get_db() as db:
+        await db.execute(
+            """UPDATE quest_assignments
+               SET applied_coefficient = ?, paid_amount = ?
+               WHERE id = ?""",
+            (coefficient, paid_amount, assignment_id)
         )
         await db.commit()
 

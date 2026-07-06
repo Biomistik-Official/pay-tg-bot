@@ -25,7 +25,7 @@ CLUB_TAGS = ["2UUQ0989V", "2CL9LRVCL", "2CP8R2Q8U"]
 BS_API_BASE = "https://api.brawlstars.com/v1"
 
 
-# ─── Вспомогательные функции ──────────────────────────────────────────────────
+# Вспомогательные функции
 
 def _encode_tag(tag: str) -> str:
     """Кодирует тег для URL: добавляет %23 вместо #."""
@@ -65,7 +65,7 @@ def _escape_html(text: str) -> str:
     )
 
 
-# ─── Запросы к API ────────────────────────────────────────────────────────────
+# Запросы к API
 
 async def _api_get(session: aiohttp.ClientSession, url: str) -> Optional[dict]:
     """Выполняет GET-запрос к Brawl Stars API."""
@@ -144,7 +144,7 @@ def _split_message(text: str, max_len: int = 4000) -> list[str]:
     return chunks if chunks else [text[:max_len]]
 
 
-# ─── Основные функции проверки ────────────────────────────────────────────────
+# Основные функции проверки
 
 async def check_all_clubs_inactive() -> str:
     """

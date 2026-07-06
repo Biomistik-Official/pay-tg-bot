@@ -92,9 +92,7 @@ def _format_order(order: dict) -> str:
     return "\n".join(lines)
 
 
-# ──────────────────────────────────────────────
 # To-Do лист
-# ──────────────────────────────────────────────
 
 @router.callback_query(F.data == "admin_todo")
 async def admin_todo_list(callback: CallbackQuery) -> None:
@@ -213,9 +211,7 @@ async def admin_todo_ignore(callback: CallbackQuery) -> None:
     await _show_todo_at(callback, 0)
 
 
-# ──────────────────────────────────────────────
 # История To-Do заявок
-# ──────────────────────────────────────────────
 
 @router.callback_query(F.data.startswith("admin_todo_history:"))
 async def admin_todo_history(callback: CallbackQuery) -> None:
@@ -255,9 +251,7 @@ async def admin_todo_history(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-# ──────────────────────────────────────────────
 # Настройки магазина
-# ──────────────────────────────────────────────
 
 @router.callback_query(F.data == "admin_shop_settings")
 async def admin_shop_settings(callback: CallbackQuery, state: FSMContext) -> None:
@@ -282,7 +276,7 @@ async def admin_shop_settings(callback: CallbackQuery, state: FSMContext) -> Non
     await callback.answer()
 
 
-# ── Курс вывода ─────────────────────────────
+# Курс вывода
 
 @router.callback_query(F.data == "admin_shop_set_rate")
 async def admin_shop_set_rate_start(callback: CallbackQuery, state: FSMContext) -> None:
@@ -327,7 +321,7 @@ async def admin_shop_set_rate_input(message: Message, state: FSMContext) -> None
     )
 
 
-# ── Минимум вывода ──────────────────────────
+# Минимум вывода
 
 @router.callback_query(F.data == "admin_shop_set_min")
 async def admin_shop_set_min_start(callback: CallbackQuery, state: FSMContext) -> None:
@@ -372,7 +366,7 @@ async def admin_shop_set_min_input(message: Message, state: FSMContext) -> None:
     )
 
 
-# ── Включение/выключение товаров ─────────────
+# Включение/выключение товаров
 
 @router.callback_query(F.data == "admin_shop_toggle_items")
 async def admin_shop_toggle_menu(callback: CallbackQuery) -> None:
@@ -415,7 +409,7 @@ async def admin_shop_toggle_item(callback: CallbackQuery) -> None:
     )
 
 
-# ── Цены тикетов (баллы) ─────────────────────
+# Цены тикетов (баллы)
 
 @router.callback_query(F.data == "admin_shop_ticket_prices")
 async def admin_shop_ticket_prices_menu(callback: CallbackQuery) -> None:
@@ -488,7 +482,7 @@ async def admin_shop_set_ticket_price_input(message: Message, state: FSMContext)
     )
 
 
-# ── Стоимость рулеток (тикеты) ───────────────
+# Стоимость рулеток (тикеты)
 
 @router.callback_query(F.data == "admin_shop_roulette_costs")
 async def admin_shop_roulette_costs_menu(callback: CallbackQuery) -> None:

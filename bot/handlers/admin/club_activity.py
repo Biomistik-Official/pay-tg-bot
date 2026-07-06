@@ -29,7 +29,7 @@ def _is_owner(telegram_id: int) -> bool:
     return telegram_id == config.owner_id
 
 
-# ─── Клавиатуры ───────────────────────────────────────────────────────────────
+# Клавиатуры
 
 def club_activity_main_keyboard() -> InlineKeyboardMarkup:
     """Главное меню раздела проверки активности."""
@@ -61,7 +61,7 @@ def club_activity_back_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-# ─── Вспомогательная функция отправки длинных ответов ─────────────────────────
+# Вспомогательная функция отправки длинных ответов
 
 async def _send_chunks(callback: CallbackQuery, text: str) -> None:
     """
@@ -83,7 +83,7 @@ async def _send_chunks(callback: CallbackQuery, text: str) -> None:
             await callback.message.answer(chunk, parse_mode="HTML", reply_markup=kb)
 
 
-# ─── Обработчики ──────────────────────────────────────────────────────────────
+# Обработчики
 
 @router.callback_query(F.data == "ca_menu")
 async def show_ca_menu(callback: CallbackQuery) -> None:

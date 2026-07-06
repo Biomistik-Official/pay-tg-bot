@@ -26,7 +26,10 @@ def main_menu_keyboard(is_owner: bool = False, is_staff: bool = False) -> Inline
     )
     builder.row(InlineKeyboardButton(text="🛒 Магазин", callback_data="shop_main"))
     if is_staff and not is_owner:
-        builder.row(InlineKeyboardButton(text="📋 Квесты", callback_data="staff_quests_menu"))
+        builder.row(
+            InlineKeyboardButton(text="📋 Квесты", callback_data="staff_quests_menu"),
+            InlineKeyboardButton(text="🎖 Роль",   callback_data="staff_role"),
+        )
     if is_owner:
         builder.row(InlineKeyboardButton(text="👑 Админ-панель", callback_data="admin_panel"))
     return builder.as_markup()
@@ -192,9 +195,7 @@ def registration_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-# ══════════════════════════════════════════════
 #  МАГАЗИН
-# ══════════════════════════════════════════════
 
 # Рулетки: (ключ, эмодзи, название, соответствующий тип тикета)
 ROULETTE_ITEMS = [

@@ -44,9 +44,7 @@ async def _check_daily_limit(user: dict, callback: CallbackQuery) -> bool:
     return True
 
 
-# ──────────────────────────────────────────────
 # Меню Тикеты / Баллы
-# ──────────────────────────────────────────────
 
 @router.callback_query(F.data == "tickets_menu")
 async def tickets_menu(callback: CallbackQuery) -> None:
@@ -118,9 +116,7 @@ async def points_menu(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-# ──────────────────────────────────────────────
 # Запрос тикетов — шаг 1: выбор типа кнопкой
-# ──────────────────────────────────────────────
 
 @router.callback_query(F.data == "request_tickets")
 async def request_tickets_start(callback: CallbackQuery, state: FSMContext) -> None:
@@ -143,9 +139,7 @@ async def request_tickets_start(callback: CallbackQuery, state: FSMContext) -> N
     await callback.answer()
 
 
-# ──────────────────────────────────────────────
 # Запрос тикетов — шаг 2: ввод количества
-# ──────────────────────────────────────────────
 
 @router.callback_query(RequestTickets.waiting_ticket_type, F.data.startswith("ticket_type:"))
 async def request_tickets_type_chosen(callback: CallbackQuery, state: FSMContext) -> None:
@@ -171,9 +165,7 @@ async def request_tickets_type_chosen(callback: CallbackQuery, state: FSMContext
     await callback.answer()
 
 
-# ──────────────────────────────────────────────
 # Запрос тикетов — шаг 3: ввод причины
-# ──────────────────────────────────────────────
 
 @router.message(RequestTickets.waiting_amount)
 async def request_tickets_amount(message: Message, state: FSMContext) -> None:
@@ -213,9 +205,7 @@ async def request_tickets_amount(message: Message, state: FSMContext) -> None:
     )
 
 
-# ──────────────────────────────────────────────
 # Запрос тикетов — шаг 4: отправка заявки
-# ──────────────────────────────────────────────
 
 @router.message(RequestTickets.waiting_reason)
 async def request_tickets_reason(message: Message, state: FSMContext, bot: Bot) -> None:
@@ -282,9 +272,7 @@ async def request_tickets_reason(message: Message, state: FSMContext, bot: Bot) 
     logger.info(f"Заявка #{request_id} на {ticket_amount}× {ticket_name} тикет от {user['nickname']} (TG:{user['telegram_id']})")
 
 
-# ──────────────────────────────────────────────
 # Запрос баллов — шаг 1: ввод количества
-# ──────────────────────────────────────────────
 
 @router.callback_query(F.data == "request_points")
 async def request_points_start(callback: CallbackQuery, state: FSMContext) -> None:

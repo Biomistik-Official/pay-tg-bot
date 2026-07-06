@@ -26,9 +26,7 @@ def _is_owner(callback: CallbackQuery) -> bool:
     return callback.from_user.id == config.owner_id
 
 
-# ──────────────────────────────────────────────
 # Главное меню управления тикетами
-# ──────────────────────────────────────────────
 
 @router.callback_query(F.data == "admin_tickets")
 async def admin_tickets_menu(callback: CallbackQuery) -> None:
@@ -86,9 +84,7 @@ async def manage_tickets_from_profile(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-# ──────────────────────────────────────────────
 # Выдача тикетов
-# ──────────────────────────────────────────────
 
 @router.callback_query(F.data == "give_tickets")
 async def give_tickets_start(callback: CallbackQuery, state: FSMContext) -> None:
@@ -189,9 +185,7 @@ async def set_tickets_for_user(callback: CallbackQuery, state: FSMContext) -> No
     await callback.answer()
 
 
-# ──────────────────────────────────────────────
 # Выбор типа тикета (Callback)
-# ──────────────────────────────────────────────
 
 @router.callback_query(F.data.startswith("admin_ticket_type:"))
 async def admin_ticket_type_chosen(callback: CallbackQuery, state: FSMContext) -> None:
@@ -230,9 +224,7 @@ async def admin_ticket_type_chosen(callback: CallbackQuery, state: FSMContext) -
     await callback.answer()
 
 
-# ──────────────────────────────────────────────
 # Обработчики FSM для тикетов
-# ──────────────────────────────────────────────
 
 @router.message(ManageTickets.waiting_user_id)
 async def tickets_get_user_id(message: Message, state: FSMContext) -> None:
@@ -361,9 +353,7 @@ async def tickets_get_reason(message: Message, state: FSMContext, bot: Bot) -> N
         pass
 
 
-# ──────────────────────────────────────────────
 # Установить баланс (SetBalance FSM)
-# ──────────────────────────────────────────────
 
 @router.message(SetBalance.waiting_user_id)
 async def set_balance_get_user_id(message: Message, state: FSMContext) -> None:

@@ -6,6 +6,7 @@ import os
 
 import aiosqlite
 from bot.config import config
+from bot.utils.ranks import RANK_META
 
 # SQL для создания всех таблиц
 CREATE_TABLES_SQL = """
@@ -23,6 +24,8 @@ CREATE TABLE IF NOT EXISTS users (
     tickets_support  INTEGER DEFAULT 0,
     tickets_help     INTEGER DEFAULT 0,
     points          REAL DEFAULT 0,
+    rubles          REAL DEFAULT 0,
+    stars           INTEGER DEFAULT 0,
     unwarns         INTEGER DEFAULT 0,
     unmutes         INTEGER DEFAULT 0,
     is_blocked      INTEGER DEFAULT 0,
@@ -33,7 +36,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS transactions (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id         INTEGER NOT NULL,
-    currency_type   TEXT NOT NULL CHECK(currency_type IN ('points', 'tickets_platinum', 'tickets_gold', 'tickets_silver', 'tickets_bronze', 'tickets_support', 'tickets_help', 'unwarns', 'unmutes')),
+    currency_type   TEXT NOT NULL CHECK(currency_type IN ('points', 'tickets_platinum', 'tickets_gold', 'tickets_silver', 'tickets_bronze', 'tickets_support', 'tickets_help', 'unwarns', 'unmutes', 'rubles', 'stars')),
     operation       TEXT NOT NULL CHECK(operation IN ('add', 'subtract', 'set')),
     amount          REAL NOT NULL,
     reason          TEXT DEFAULT '',
@@ -77,6 +80,7 @@ CREATE TABLE IF NOT EXISTS staff (
     granted_by  INTEGER,
     granted_at  TEXT DEFAULT (datetime('now')),
     is_active   INTEGER DEFAULT 1,
+    rank        TEXT DEFAULT 'novice',
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
@@ -86,6 +90,7 @@ CREATE TABLE IF NOT EXISTS quests (
     description     TEXT NOT NULL,
     reward_type     TEXT NOT NULL,
     reward_amount   REAL NOT NULL,
+    reward_mode     TEXT NOT NULL DEFAULT 'flat' CHECK(reward_mode IN ('flat', 'coefficient')),
     max_executors   INTEGER NOT NULL DEFAULT 1,
     deadline        TEXT,
     status          TEXT DEFAULT 'active' CHECK(status IN ('active', 'closed')),
@@ -105,9 +110,26 @@ CREATE TABLE IF NOT EXISTS quest_assignments (
     reviewed_at     TEXT,
     reviewed_by     INTEGER,
     reject_reason   TEXT,
+    applied_coefficient REAL,
+    paid_amount     REAL,
     FOREIGN KEY (quest_id) REFERENCES quests(id),
     FOREIGN KEY (user_id) REFERENCES users(id),
     UNIQUE(quest_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS staff_rank_history (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL,
+    old_rank    TEXT,
+    new_rank    TEXT NOT NULL,
+    changed_by  INTEGER,
+    changed_at  TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS staff_rank_coefficients (
+    rank        TEXT PRIMARY KEY,
+    coefficient REAL NOT NULL
 );
 """
 
@@ -170,16 +192,24 @@ async def init_db() -> None:
             await db.execute("ALTER TABLE users ADD COLUMN unmutes INTEGER DEFAULT 0")
             await db.commit()
 
+        if "rubles" not in columns:
+            await db.execute("ALTER TABLE users ADD COLUMN rubles REAL DEFAULT 0")
+            await db.commit()
+
+        if "stars" not in columns:
+            await db.execute("ALTER TABLE users ADD COLUMN stars INTEGER DEFAULT 0")
+            await db.commit()
+
         # Миграция: Обновляем CHECK constraint для transactions, если нужно
         async with db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='transactions'") as cursor:
             row = await cursor.fetchone()
-            if row and ("unwarns" not in row[0] or "unmutes" not in row[0]):
+            if row and ("unwarns" not in row[0] or "unmutes" not in row[0] or "rubles" not in row[0] or "stars" not in row[0]):
                 await db.execute("ALTER TABLE transactions RENAME TO transactions_old")
                 await db.execute("""
                     CREATE TABLE transactions (
                         id              INTEGER PRIMARY KEY AUTOINCREMENT,
                         user_id         INTEGER NOT NULL,
-                        currency_type   TEXT NOT NULL CHECK(currency_type IN ('points', 'tickets_platinum', 'tickets_gold', 'tickets_silver', 'tickets_bronze', 'tickets_support', 'tickets_help', 'unwarns', 'unmutes')),
+                        currency_type   TEXT NOT NULL CHECK(currency_type IN ('points', 'tickets_platinum', 'tickets_gold', 'tickets_silver', 'tickets_bronze', 'tickets_support', 'tickets_help', 'unwarns', 'unmutes', 'rubles', 'stars')),
                         operation       TEXT NOT NULL CHECK(operation IN ('add', 'subtract', 'set')),
                         amount          REAL NOT NULL,
                         reason          TEXT DEFAULT '',
@@ -270,11 +300,43 @@ async def init_db() -> None:
                 """)
                 await db.commit()
 
+        # Миграция: ранги Staff — колонка rank в таблице staff
+        async with db.execute("PRAGMA table_info(staff)") as cursor:
+            staff_columns = [row[1] for row in await cursor.fetchall()]
+        if "rank" not in staff_columns:
+            await db.execute("ALTER TABLE staff ADD COLUMN rank TEXT DEFAULT 'novice'")
+            await db.commit()
+
+        # Миграция: способ начисления награды — колонка reward_mode в таблице quests
+        async with db.execute("PRAGMA table_info(quests)") as cursor:
+            quest_columns = [row[1] for row in await cursor.fetchall()]
+        if "reward_mode" not in quest_columns:
+            await db.execute("ALTER TABLE quests ADD COLUMN reward_mode TEXT NOT NULL DEFAULT 'flat'")
+            await db.commit()
+
+        # Миграция: применённый коэффициент и фактическая награда в quest_assignments
+        async with db.execute("PRAGMA table_info(quest_assignments)") as cursor:
+            qa_columns = [row[1] for row in await cursor.fetchall()]
+        if "applied_coefficient" not in qa_columns:
+            await db.execute("ALTER TABLE quest_assignments ADD COLUMN applied_coefficient REAL")
+            await db.commit()
+        if "paid_amount" not in qa_columns:
+            await db.execute("ALTER TABLE quest_assignments ADD COLUMN paid_amount REAL")
+            await db.commit()
+
         # Вставляем дефолтные настройки магазина (игнорируем, если уже есть)
         for key, value in DEFAULT_SHOP_SETTINGS:
             await db.execute(
                 "INSERT OR IGNORE INTO shop_settings (key, value) VALUES (?, ?)",
                 (key, value)
+            )
+        await db.commit()
+
+        # Вставляем дефолтные коэффициенты рангов Staff (игнорируем, если уже есть)
+        for rank, meta in RANK_META.items():
+            await db.execute(
+                "INSERT OR IGNORE INTO staff_rank_coefficients (rank, coefficient) VALUES (?, ?)",
+                (rank, meta["default_coef"])
             )
         await db.commit()
 

@@ -55,6 +55,22 @@ def format_operation(operation: str, currency_type: str, amount: float) -> str:
             return f"➖ Снят Анмут" if int_amount == 1 else f"➖ Снято {int_amount} Анмутов"
         else:
             return f"✏️ Установлено {int_amount} Анмутов"
+    elif currency_type == "rubles":
+        amount_str = f"{amount:g}"
+        if operation == "add":
+            return f"➕ 💰 {amount_str} ₽ (рубли)"
+        elif operation == "subtract":
+            return f"➖ 💰 {amount_str} ₽ (рубли)"
+        else:
+            return f"✏️ 💰 Установлено {amount_str} ₽"
+    elif currency_type == "stars":
+        int_amount = int(amount)
+        if operation == "add":
+            return f"➕ 🌟 {int_amount} шт. (звёзды)"
+        elif operation == "subtract":
+            return f"➖ 🌟 {int_amount} шт. (звёзды)"
+        else:
+            return f"✏️ 🌟 Установлено {int_amount} звёзд"
     else:
         emoji = "⭐"
         label = "балл"
@@ -97,6 +113,8 @@ def format_profile(user: dict) -> str:
     
     tickets_text = "\n" + "\n".join(tickets_list) if tickets_list else "  <i>нет тикетов</i>"
     points = user['points']
+    rubles = user.get('rubles', 0) or 0
+    stars = int(user.get('stars', 0) or 0)
 
     return (
         f"👤 <b>Профиль игрока</b>{blocked}\n\n"
@@ -107,6 +125,8 @@ def format_profile(user: dict) -> str:
         f"🆔 <b>Telegram ID:</b> <code>{user['telegram_id']}</code>\n\n"
         f"🎫 <b>Тикеты:</b>{tickets_text}\n"
         f"⭐ <b>Баллы:</b> {points:g}\n"
+        f"💰 <b>Рубли:</b> {rubles:g} ₽\n"
+        f"🌟 <b>Звёзды:</b> {stars}\n"
         f"⚠️ <b>Анварны:</b> {user.get('unwarns', 0)}\n"
         f"🔇 <b>Анмуты:</b> {user.get('unmutes', 0)}\n\n"
         f"✅ <b>Одобрено заявок:</b> {user['approved_requests']}\n"
