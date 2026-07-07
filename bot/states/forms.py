@@ -145,3 +145,48 @@ class ManageAdminCurrency(StatesGroup):
     waiting_amount = State()
     waiting_reason = State()
 
+
+# Категории Staff — создание / редактирование
+class CategoryCreate(StatesGroup):
+    waiting_name        = State()
+    waiting_description = State()
+    waiting_coefficient = State()
+    waiting_comment     = State()
+
+
+class CategoryEdit(StatesGroup):
+    waiting_value = State()
+
+
+class CategoryAddMember(StatesGroup):
+    waiting_search = State()
+
+
+# Выдача зарплаты по категории
+class CategorySalary(StatesGroup):
+    waiting_base    = State()
+    waiting_confirm = State()
+
+
+# Зарплата одному сотруднику
+class CategorySalarySingle(StatesGroup):
+    waiting_base    = State()
+    waiting_confirm = State()
+
+
+# Штраф
+class CategoryPenalty(StatesGroup):
+    waiting_amount  = State()
+    waiting_confirm = State()
+
+
+# Рассылка сообщения категории
+class CategoryBroadcast(StatesGroup):
+    waiting_text    = State()
+    waiting_confirm = State()
+
+
+# Изменение коэффициента категории из общего меню
+class CategoryCoefEdit(StatesGroup):
+    waiting_value = State()
+

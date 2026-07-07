@@ -1149,3 +1149,262 @@ async def delete_assignment(assignment_id: int) -> None:
         await db.execute("DELETE FROM quest_assignments WHERE id = ?", (assignment_id,))
         await db.commit()
 
+
+#  STAFF CATEGORIES
+
+async def create_staff_category(
+    name: str,
+    description: str = "",
+    coefficient: float = 1.0,
+    comment: str = "",
+) -> int:
+    """Создать категорию Staff. Возвращает ID."""
+    async with get_db() as db:
+        cursor = await db.execute(
+            """INSERT INTO staff_categories (name, description, coefficient, comment)
+               VALUES (?, ?, ?, ?)""",
+            (name, description, coefficient, comment),
+        )
+        await db.commit()
+        return cursor.lastrowid
+
+
+async def get_all_staff_categories() -> list[dict]:
+    """Все категории Staff (с количеством участников)."""
+    async with get_db() as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """SELECT c.*,
+                      (SELECT COUNT(*) FROM staff s
+                        WHERE s.category_id = c.id AND s.is_active = 1) AS members_count
+               FROM staff_categories c
+               ORDER BY c.id ASC"""
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
+
+
+async def get_staff_category(category_id: int) -> Optional[dict]:
+    """Одна категория."""
+    async with get_db() as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM staff_categories WHERE id = ?", (category_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            return dict(row) if row else None
+
+
+async def update_staff_category(category_id: int, **fields) -> None:
+    """Обновить поля категории."""
+    allowed = {"name", "description", "coefficient", "comment"}
+    updates = {k: v for k, v in fields.items() if k in allowed}
+    if not updates:
+        return
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    values = list(updates.values()) + [category_id]
+    async with get_db() as db:
+        await db.execute(
+            f"UPDATE staff_categories SET {set_clause} WHERE id = ?", values
+        )
+        await db.commit()
+
+
+async def delete_staff_category(category_id: int) -> None:
+    """Удалить категорию. Участники остаются Staff, просто без категории."""
+    async with get_db() as db:
+        await db.execute(
+            "UPDATE staff SET category_id = NULL WHERE category_id = ?", (category_id,)
+        )
+        await db.execute(
+            "UPDATE staff_category_operations SET category_id = NULL WHERE category_id = ?",
+            (category_id,),
+        )
+        await db.execute(
+            "DELETE FROM staff_categories WHERE id = ?", (category_id,)
+        )
+        await db.commit()
+
+
+async def set_staff_category(user_id: int, category_id: Optional[int]) -> None:
+    """Назначить Staff в категорию (или снять, если None)."""
+    async with get_db() as db:
+        await db.execute(
+            "UPDATE staff SET category_id = ? WHERE user_id = ?",
+            (category_id, user_id),
+        )
+        await db.commit()
+
+
+async def get_category_members(category_id: int) -> list[dict]:
+    """Активные Staff в категории."""
+    async with get_db() as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """SELECT s.*, u.nickname, u.username, u.telegram_id
+               FROM staff s
+               JOIN users u ON s.user_id = u.id
+               WHERE s.category_id = ? AND s.is_active = 1
+               ORDER BY LOWER(u.nickname) ASC""",
+            (category_id,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
+
+
+async def get_staff_without_category() -> list[dict]:
+    """Активные Staff, не состоящие ни в какой категории."""
+    async with get_db() as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """SELECT s.*, u.nickname, u.username, u.telegram_id
+               FROM staff s
+               JOIN users u ON s.user_id = u.id
+               WHERE s.category_id IS NULL AND s.is_active = 1
+               ORDER BY LOWER(u.nickname) ASC"""
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
+
+
+async def record_category_operation(
+    category_id: Optional[int],
+    operation_type: str,
+    scope: str,
+    base_amount: float,
+    performed_by: int,
+    items: list[dict],
+) -> int:
+    """
+    Записать операцию (зарплата/штраф) по категории и её результаты по каждому получателю.
+    items: [{user_id, amount, rank, rank_coef, category_coef}, ...]
+    Возвращает id операции.
+    """
+    total = sum(float(it["amount"]) for it in items)
+    async with get_db() as db:
+        cursor = await db.execute(
+            """INSERT INTO staff_category_operations
+                (category_id, operation_type, scope, base_amount,
+                 total_amount, recipients_count, performed_by)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (category_id, operation_type, scope, base_amount, total, len(items), performed_by),
+        )
+        op_id = cursor.lastrowid
+        for it in items:
+            await db.execute(
+                """INSERT INTO staff_category_operation_items
+                    (operation_id, user_id, amount, rank_at_time, rank_coef, category_coef)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (op_id, it["user_id"], it["amount"], it.get("rank"),
+                 it.get("rank_coef"), it.get("category_coef")),
+            )
+        await db.commit()
+        return op_id
+
+
+async def get_category_operations(category_id: int, limit: int = 30) -> list[dict]:
+    """История операций категории."""
+    async with get_db() as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """SELECT o.*, u.nickname AS performer_nickname
+               FROM staff_category_operations o
+               LEFT JOIN users u ON o.performed_by = u.telegram_id
+               WHERE o.category_id = ?
+               ORDER BY o.created_at DESC
+               LIMIT ?""",
+            (category_id, limit),
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
+
+
+async def get_category_operation_items(operation_id: int) -> list[dict]:
+    """Получатели одной операции."""
+    async with get_db() as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """SELECT it.*, u.nickname, u.telegram_id
+               FROM staff_category_operation_items it
+               JOIN users u ON it.user_id = u.id
+               WHERE it.operation_id = ?
+               ORDER BY it.amount DESC""",
+            (operation_id,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
+
+
+async def get_category_stats(category_id: int) -> dict:
+    """Статистика категории."""
+    async with get_db() as db:
+        async with db.execute(
+            """SELECT COUNT(*) FROM staff
+               WHERE category_id = ? AND is_active = 1""",
+            (category_id,),
+        ) as c:
+            members = (await c.fetchone())[0]
+
+        async with db.execute(
+            """SELECT COALESCE(SUM(total_amount), 0)
+               FROM staff_category_operations
+               WHERE category_id = ? AND operation_type = 'salary'""",
+            (category_id,),
+        ) as c:
+            total_salary = (await c.fetchone())[0]
+
+        async with db.execute(
+            """SELECT COALESCE(SUM(total_amount), 0)
+               FROM staff_category_operations
+               WHERE category_id = ? AND operation_type = 'penalty'""",
+            (category_id,),
+        ) as c:
+            total_penalty = (await c.fetchone())[0]
+
+        async with db.execute(
+            """SELECT MAX(created_at)
+               FROM staff_category_operations
+               WHERE category_id = ? AND operation_type = 'salary'""",
+            (category_id,),
+        ) as c:
+            last_salary = (await c.fetchone())[0]
+
+        # Самый активный по сумме полученных баллов внутри категории
+        async with db.execute(
+            """SELECT u.nickname, SUM(it.amount) AS earned
+               FROM staff_category_operation_items it
+               JOIN staff_category_operations o ON it.operation_id = o.id
+               JOIN users u ON it.user_id = u.id
+               WHERE o.category_id = ? AND o.operation_type = 'salary'
+               GROUP BY it.user_id
+               ORDER BY earned DESC
+               LIMIT 1""",
+            (category_id,),
+        ) as c:
+            row = await c.fetchone()
+            top_member = row[0] if row else None
+            top_amount = row[1] if row else 0
+
+    return {
+        "members": members,
+        "total_salary": total_salary,
+        "total_penalty": total_penalty,
+        "last_salary": last_salary,
+        "top_member": top_member,
+        "top_amount": top_amount,
+    }
+
+
+async def get_staff_category_info(user_id: int) -> Optional[dict]:
+    """Категория, в которой состоит Staff (или None)."""
+    async with get_db() as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """SELECT c.* FROM staff_categories c
+               JOIN staff s ON s.category_id = c.id
+               WHERE s.user_id = ? AND s.is_active = 1""",
+            (user_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+            return dict(row) if row else None
+

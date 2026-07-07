@@ -447,6 +447,10 @@ def admin_staff_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="🎖 Роли Staff",         callback_data="admin_ranks"),
         InlineKeyboardButton(text="⚙️ Коэффициенты Staff", callback_data="admin_coefs"),
     )
+    builder.row(
+        InlineKeyboardButton(text="📂 Категории Staff",    callback_data="admin_cats"),
+        InlineKeyboardButton(text="⚙️ Коэф. категорий",    callback_data="admin_cat_coefs"),
+    )
     builder.row(InlineKeyboardButton(text="⬅️ Админ-панель", callback_data="admin_panel"))
     return builder.as_markup()
 

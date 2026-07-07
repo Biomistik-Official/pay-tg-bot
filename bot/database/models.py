@@ -131,7 +131,66 @@ CREATE TABLE IF NOT EXISTS staff_rank_coefficients (
     rank        TEXT PRIMARY KEY,
     coefficient REAL NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS staff_categories (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL UNIQUE,
+    description TEXT DEFAULT '',
+    coefficient REAL NOT NULL DEFAULT 1,
+    comment     TEXT DEFAULT '',
+    created_at  TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS staff_category_operations (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    category_id     INTEGER,
+    operation_type  TEXT NOT NULL CHECK(operation_type IN ('salary', 'penalty')),
+    scope           TEXT NOT NULL CHECK(scope IN ('category', 'single')),
+    base_amount     REAL NOT NULL,
+    total_amount    REAL NOT NULL DEFAULT 0,
+    recipients_count INTEGER NOT NULL DEFAULT 0,
+    performed_by    INTEGER,
+    created_at      TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (category_id) REFERENCES staff_categories(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS staff_category_operation_items (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    operation_id    INTEGER NOT NULL,
+    user_id         INTEGER NOT NULL,
+    amount          REAL NOT NULL,
+    rank_at_time    TEXT,
+    rank_coef       REAL,
+    category_coef   REAL,
+    FOREIGN KEY (operation_id) REFERENCES staff_category_operations(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
 """
+
+# Дефолтные категории Staff
+DEFAULT_STAFF_CATEGORIES = [
+    (
+        "🎯 Активности",
+        "Администрация отвечающая за активность и отыгровку всех ивентов клана "
+        "на максимально возможную. Если администрация пропустит хоть 1 человека "
+        "по неактиву выше недопустимого на день, то получит штраф. "
+        "Недельная ЗП = коэффициент × 10 / количество людей в категории.",
+        10.0,
+    ),
+    (
+        "🏆 Достижения",
+        "Администрация отвечающая за обновление списков достижений. Должны быть "
+        "указаны правильно все достижения во всех кланах, исключение в 1 погрешность. "
+        "Недельная ЗП = коэффициент × 20 / количество людей в категории.",
+        20.0,
+    ),
+    (
+        "🛡 Проверочная",
+        "Администрация, решающая все вопросы клана. Недельной ЗП нет, всё зависит "
+        "от вашего вклада. Примерная ЗП 0–50 баллов.",
+        1.0,
+    ),
+]
 
 # Дефолтные настройки магазина
 DEFAULT_SHOP_SETTINGS = [
@@ -307,6 +366,11 @@ async def init_db() -> None:
             await db.execute("ALTER TABLE staff ADD COLUMN rank TEXT DEFAULT 'novice'")
             await db.commit()
 
+        # Миграция: колонка category_id в staff
+        if "category_id" not in staff_columns:
+            await db.execute("ALTER TABLE staff ADD COLUMN category_id INTEGER")
+            await db.commit()
+
         # Миграция: способ начисления награды — колонка reward_mode в таблице quests
         async with db.execute("PRAGMA table_info(quests)") as cursor:
             quest_columns = [row[1] for row in await cursor.fetchall()]
@@ -339,6 +403,44 @@ async def init_db() -> None:
                 (rank, meta["default_coef"])
             )
         await db.commit()
+
+        # Дефолтные категории Staff (если таблица пуста)
+        async with db.execute("SELECT COUNT(*) FROM staff_categories") as cur:
+            cnt = (await cur.fetchone())[0]
+        if cnt == 0:
+            for name, desc, coef in DEFAULT_STAFF_CATEGORIES:
+                await db.execute(
+                    "INSERT INTO staff_categories (name, description, coefficient) VALUES (?, ?, ?)",
+                    (name, desc, coef)
+                )
+            await db.commit()
+
+        # Одноразовая миграция: обновить описания дефолтных категорий и коэффициенты
+        # рангов до новых значений. Флаг хранится в shop_settings.
+        async with db.execute(
+            "SELECT value FROM shop_settings WHERE key = 'migration_v2_categories_ranks'"
+        ) as cur:
+            row = await cur.fetchone()
+        if not row:
+            for name, desc, coef in DEFAULT_STAFF_CATEGORIES:
+                await db.execute(
+                    """UPDATE staff_categories
+                       SET description = ?, coefficient = ?
+                       WHERE name = ?""",
+                    (desc, coef, name),
+                )
+            for rank, meta in RANK_META.items():
+                await db.execute(
+                    """UPDATE staff_rank_coefficients
+                       SET coefficient = ?
+                       WHERE rank = ?""",
+                    (meta["default_coef"], rank),
+                )
+            await db.execute(
+                "INSERT OR REPLACE INTO shop_settings (key, value) VALUES (?, ?)",
+                ("migration_v2_categories_ranks", "1"),
+            )
+            await db.commit()
 
 
 def get_db():

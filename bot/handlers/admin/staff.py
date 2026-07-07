@@ -80,11 +80,17 @@ async def view_staff_member(callback: CallbackQuery) -> None:
     last = stats["last_activity"] or "—"
     rank = await queries.get_staff_rank(user["id"])
     coef = await queries.get_rank_coefficient(rank)
+    cat = await queries.get_staff_category_info(user["id"])
+    cat_line = (
+        f"📂 Категория: <b>{cat['name']}</b> (×{cat['coefficient']:g})"
+        if cat else "📂 Категория: <i>не назначена</i>"
+    )
     text = (
         f"\U0001f6e0 <b>Staff: {user['nickname']}</b>\n"
         f"@{user.get('username') or '—'} | <code>{telegram_id}</code>\n\n"
         f"🎖 Ранг: <b>{rank_label(rank)}</b>\n"
-        f"📈 Коэффициент: <b>×{coef:g}</b>\n\n"
+        f"📈 Коэффициент: <b>×{coef:g}</b>\n"
+        f"{cat_line}\n\n"
         f"\U0001f4cb Выполнено квестов: <b>{stats['completed']}</b>\n"
         f"\u2b50 Заработано баллов: <b>{stats['earned_points']:g}</b>\n"
         f"\U0001f3ab Заработано тикетов: <b>{stats['earned_tickets']:g}</b>\n"
