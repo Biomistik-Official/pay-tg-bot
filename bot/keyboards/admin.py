@@ -541,18 +541,38 @@ def rank_history_keyboard(telegram_id: int) -> InlineKeyboardMarkup:
 
 # Коэффициенты рангов Staff (Owner only)
 
-def admin_coefs_keyboard(coefficients: dict) -> InlineKeyboardMarkup:
-    """Меню «Коэффициенты Staff». Показывает текущий множитель у каждого ранга."""
+def admin_coefs_menu_keyboard() -> InlineKeyboardMarkup:
+    """Меню выбора вида коэффициентов рангов."""
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text="📋 Коэф. квестов",
+        callback_data="admin_coefs_quest",
+    ))
+    builder.row(InlineKeyboardButton(
+        text="📂 Коэф. категорий",
+        callback_data="admin_coefs_cat",
+    ))
+    builder.row(InlineKeyboardButton(text="⬅️ Управление Staff", callback_data="admin_staff"))
+    return builder.as_markup()
+
+
+def admin_coefs_keyboard(coefficients: dict, kind: str = "quest") -> InlineKeyboardMarkup:
+    """
+    Клавиатура рангов с текущим значением одного из двух коэффициентов.
+    kind: 'quest' (базовый) или 'cat' (категорийный).
+    """
     from bot.utils.ranks import RANK_ORDER, RANK_META
+    default_key = "default_coef" if kind == "quest" else "default_cat_coef"
+    edit_prefix = "admin_coef_edit" if kind == "quest" else "admin_catcoef_edit"
     builder = InlineKeyboardBuilder()
     for rank in RANK_ORDER:
         meta = RANK_META[rank]
-        coef = coefficients.get(rank, meta["default_coef"])
+        coef = coefficients.get(rank, meta[default_key])
         builder.row(InlineKeyboardButton(
             text=f"{meta['emoji']} {meta['name']} — ×{coef:g}",
-            callback_data=f"admin_coef_edit:{rank}"
+            callback_data=f"{edit_prefix}:{rank}",
         ))
-    builder.row(InlineKeyboardButton(text="⬅️ Управление Staff", callback_data="admin_staff"))
+    builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_coefs"))
     return builder.as_markup()
 
 

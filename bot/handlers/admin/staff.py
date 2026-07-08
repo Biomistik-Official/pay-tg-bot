@@ -13,9 +13,9 @@ from bot.keyboards.admin import (
     cancel_admin_keyboard,
     admin_ranks_menu_keyboard, admin_ranks_list_keyboard,
     rank_pick_keyboard, rank_history_keyboard,
-    admin_coefs_keyboard,
+    admin_coefs_keyboard, admin_coefs_menu_keyboard,
 )
-from bot.states.forms import ManageStaff, SetRankCoefficient
+from bot.states.forms import ManageStaff, SetRankCoefficient, SetRankCategoryCoefficient
 from bot.utils.ranks import (
     RANK_META, RANK_ORDER, DEFAULT_RANK,
     rank_label, rank_name,
@@ -80,6 +80,7 @@ async def view_staff_member(callback: CallbackQuery) -> None:
     last = stats["last_activity"] or "—"
     rank = await queries.get_staff_rank(user["id"])
     coef = await queries.get_rank_coefficient(rank)
+    cat_coef = await queries.get_rank_category_coefficient(rank)
     cat = await queries.get_staff_category_info(user["id"])
     cat_line = (
         f"📂 Категория: <b>{cat['name']}</b> (×{cat['coefficient']:g})"
@@ -89,7 +90,8 @@ async def view_staff_member(callback: CallbackQuery) -> None:
         f"\U0001f6e0 <b>Staff: {user['nickname']}</b>\n"
         f"@{user.get('username') or '—'} | <code>{telegram_id}</code>\n\n"
         f"🎖 Ранг: <b>{rank_label(rank)}</b>\n"
-        f"📈 Коэффициент: <b>×{coef:g}</b>\n"
+        f"📋 Коэф. квестов: <b>×{coef:g}</b>\n"
+        f"📂 Коэф. категорий: <b>×{cat_coef:g}</b>\n"
         f"{cat_line}\n\n"
         f"\U0001f4cb Выполнено квестов: <b>{stats['completed']}</b>\n"
         f"\u2b50 Заработано баллов: <b>{stats['earned_points']:g}</b>\n"
@@ -419,22 +421,58 @@ async def show_rank_history(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "admin_coefs")
 async def show_coefs_menu(callback: CallbackQuery) -> None:
-    """Меню коэффициентов рангов Staff."""
+    """Меню выбора: коэф. квестов или коэф. категорий."""
+    if not _is_owner(callback.from_user.id):
+        return await callback.answer("No access.", show_alert=True)
+    await callback.message.edit_text(
+        "⚙️ <b>Коэффициенты Staff</b>\n\n"
+        "📋 <b>Коэф. квестов</b> — множитель награды за квесты.\n"
+        "📂 <b>Коэф. категорий</b> — используется в формуле ЗП категории.",
+        reply_markup=admin_coefs_menu_keyboard(),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_coefs_quest")
+async def show_coefs_quest(callback: CallbackQuery) -> None:
     if not _is_owner(callback.from_user.id):
         return await callback.answer("No access.", show_alert=True)
     coefs = await queries.get_all_rank_coefficients()
-    lines = ["⚙️ <b>Коэффициенты Staff</b>\n"]
+    lines = ["📋 <b>Коэффициенты квестов</b>\n"]
     for rank in RANK_ORDER:
         meta = RANK_META[rank]
         c = coefs.get(rank, meta["default_coef"])
         lines.append(f"{meta['emoji']} <b>{meta['name']}</b> — ×{c:g}")
     lines.append(
-        "\nНажмите на ранг, чтобы изменить множитель.\n"
-        "<i>Изменения применяются сразу ко всем новым квестам.</i>"
+        "\nНажмите ранг, чтобы изменить.\n"
+        "<i>Применяется ко всем новым начислениям за квесты.</i>"
     )
     await callback.message.edit_text(
         "\n".join(lines),
-        reply_markup=admin_coefs_keyboard(coefs),
+        reply_markup=admin_coefs_keyboard(coefs, kind="quest"),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_coefs_cat")
+async def show_coefs_cat(callback: CallbackQuery) -> None:
+    if not _is_owner(callback.from_user.id):
+        return await callback.answer("No access.", show_alert=True)
+    coefs = await queries.get_all_rank_category_coefficients()
+    lines = ["📂 <b>Коэффициенты категорий</b>\n"]
+    for rank in RANK_ORDER:
+        meta = RANK_META[rank]
+        c = coefs.get(rank, meta["default_cat_coef"])
+        lines.append(f"{meta['emoji']} <b>{meta['name']}</b> — ×{c:g}")
+    lines.append(
+        "\nНажмите ранг, чтобы изменить.\n"
+        "<i>Формула ЗП: база × коэф.категории × кат.коэф.ранга / N.</i>"
+    )
+    await callback.message.edit_text(
+        "\n".join(lines),
+        reply_markup=admin_coefs_keyboard(coefs, kind="cat"),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -442,7 +480,7 @@ async def show_coefs_menu(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("admin_coef_edit:"))
 async def start_coef_edit(callback: CallbackQuery, state: FSMContext) -> None:
-    """Запросить новое значение коэффициента для ранга."""
+    """Изменить квестовый коэффициент ранга."""
     if not _is_owner(callback.from_user.id):
         return await callback.answer("No access.", show_alert=True)
     rank = callback.data.split(":")[1]
@@ -452,7 +490,7 @@ async def start_coef_edit(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(SetRankCoefficient.waiting_value)
     await state.update_data(rank=rank)
     await callback.message.edit_text(
-        f"⚙️ <b>Коэффициент — {rank_label(rank)}</b>\n\n"
+        f"📋 <b>Коэф. квестов — {rank_label(rank)}</b>\n\n"
         f"Текущее значение: <b>×{current:g}</b>\n\n"
         f"Введите новый множитель (например, 1.5):",
         reply_markup=cancel_admin_keyboard(),
@@ -463,7 +501,6 @@ async def start_coef_edit(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.message(SetRankCoefficient.waiting_value)
 async def apply_coef_edit(message: Message, state: FSMContext) -> None:
-    """Применить введённое значение коэффициента."""
     if not _is_owner(message.from_user.id):
         return
     data = await state.get_data()
@@ -473,11 +510,11 @@ async def apply_coef_edit(message: Message, state: FSMContext) -> None:
         return
     try:
         value = float(message.text.strip().replace(",", "."))
-        if value <= 0:
+        if value < 0:
             raise ValueError
     except ValueError:
         return await message.answer(
-            "⚠️ Введите положительное число (например, 1.5).",
+            "⚠️ Введите неотрицательное число (например, 1.5).",
             reply_markup=cancel_admin_keyboard(),
         )
 
@@ -486,14 +523,14 @@ async def apply_coef_edit(message: Message, state: FSMContext) -> None:
     await state.clear()
     log_admin_action(
         message.from_user.id,
-        "Изменение коэффициента ранга",
+        "Изменение коэф. квестов",
         f"rank={rank} {old:g} → {value:g}",
     )
 
     coefs = await queries.get_all_rank_coefficients()
     lines = [
-        f"✅ Коэффициент <b>{rank_label(rank)}</b>: <b>×{value:g}</b>\n",
-        "⚙️ <b>Коэффициенты Staff</b>\n",
+        f"✅ <b>{rank_label(rank)}</b> — коэф. квестов: <b>×{value:g}</b>\n",
+        "📋 <b>Коэффициенты квестов</b>\n",
     ]
     for r in RANK_ORDER:
         meta = RANK_META[r]
@@ -501,6 +538,71 @@ async def apply_coef_edit(message: Message, state: FSMContext) -> None:
         lines.append(f"{meta['emoji']} <b>{meta['name']}</b> — ×{c:g}")
     await message.answer(
         "\n".join(lines),
-        reply_markup=admin_coefs_keyboard(coefs),
+        reply_markup=admin_coefs_keyboard(coefs, kind="quest"),
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data.startswith("admin_catcoef_edit:"))
+async def start_catcoef_edit(callback: CallbackQuery, state: FSMContext) -> None:
+    """Изменить категорийный коэффициент ранга."""
+    if not _is_owner(callback.from_user.id):
+        return await callback.answer("No access.", show_alert=True)
+    rank = callback.data.split(":")[1]
+    if rank not in RANK_META:
+        return await callback.answer("Неизвестный ранг.", show_alert=True)
+    current = await queries.get_rank_category_coefficient(rank)
+    await state.set_state(SetRankCategoryCoefficient.waiting_value)
+    await state.update_data(rank=rank)
+    await callback.message.edit_text(
+        f"📂 <b>Коэф. категорий — {rank_label(rank)}</b>\n\n"
+        f"Текущее значение: <b>×{current:g}</b>\n\n"
+        f"Введите новый множитель (например, 0.5):",
+        reply_markup=cancel_admin_keyboard(),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(SetRankCategoryCoefficient.waiting_value)
+async def apply_catcoef_edit(message: Message, state: FSMContext) -> None:
+    if not _is_owner(message.from_user.id):
+        return
+    data = await state.get_data()
+    rank = data.get("rank")
+    if rank not in RANK_META:
+        await state.clear()
+        return
+    try:
+        value = float(message.text.strip().replace(",", "."))
+        if value < 0:
+            raise ValueError
+    except ValueError:
+        return await message.answer(
+            "⚠️ Введите неотрицательное число (например, 0.5).",
+            reply_markup=cancel_admin_keyboard(),
+        )
+
+    old = await queries.get_rank_category_coefficient(rank)
+    await queries.set_rank_category_coefficient(rank, value)
+    await state.clear()
+    log_admin_action(
+        message.from_user.id,
+        "Изменение коэф. категорий",
+        f"rank={rank} {old:g} → {value:g}",
+    )
+
+    coefs = await queries.get_all_rank_category_coefficients()
+    lines = [
+        f"✅ <b>{rank_label(rank)}</b> — коэф. категорий: <b>×{value:g}</b>\n",
+        "📂 <b>Коэффициенты категорий</b>\n",
+    ]
+    for r in RANK_ORDER:
+        meta = RANK_META[r]
+        c = coefs.get(r, meta["default_cat_coef"])
+        lines.append(f"{meta['emoji']} <b>{meta['name']}</b> — ×{c:g}")
+    await message.answer(
+        "\n".join(lines),
+        reply_markup=admin_coefs_keyboard(coefs, kind="cat"),
         parse_mode="HTML",
     )

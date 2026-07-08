@@ -705,7 +705,7 @@ async def get_staff_rank_history(user_id: int, limit: int = 20) -> list[dict]:
 # Коэффициенты рангов
 
 async def get_rank_coefficient(rank: str) -> float:
-    """Получить коэффициент награды для ранга."""
+    """Квестовый коэффициент ранга."""
     from bot.utils.ranks import RANK_META, DEFAULT_RANK
     default = RANK_META.get(rank, RANK_META[DEFAULT_RANK])["default_coef"]
     async with get_db() as db:
@@ -716,8 +716,21 @@ async def get_rank_coefficient(rank: str) -> float:
             return float(row[0]) if row else float(default)
 
 
+async def get_rank_category_coefficient(rank: str) -> float:
+    """Категорийный коэффициент ранга."""
+    from bot.utils.ranks import RANK_META, DEFAULT_RANK
+    default = RANK_META.get(rank, RANK_META[DEFAULT_RANK])["default_cat_coef"]
+    async with get_db() as db:
+        async with db.execute(
+            "SELECT category_coefficient FROM staff_rank_coefficients WHERE rank = ?",
+            (rank,),
+        ) as cursor:
+            row = await cursor.fetchone()
+            return float(row[0]) if row else float(default)
+
+
 async def get_all_rank_coefficients() -> dict:
-    """Получить коэффициенты всех рангов ({rank: coefficient})."""
+    """Все квестовые коэффициенты ({rank: coefficient})."""
     async with get_db() as db:
         async with db.execute(
             "SELECT rank, coefficient FROM staff_rank_coefficients"
@@ -726,12 +739,52 @@ async def get_all_rank_coefficients() -> dict:
             return {row[0]: float(row[1]) for row in rows}
 
 
-async def set_rank_coefficient(rank: str, coefficient: float) -> None:
-    """Изменить коэффициент награды для ранга."""
+async def get_all_rank_category_coefficients() -> dict:
+    """Все категорийные коэффициенты ({rank: category_coefficient})."""
     async with get_db() as db:
+        async with db.execute(
+            "SELECT rank, category_coefficient FROM staff_rank_coefficients"
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return {row[0]: float(row[1]) for row in rows}
+
+
+async def set_rank_coefficient(rank: str, coefficient: float) -> None:
+    """Изменить квестовый коэффициент ранга (сохраняет категорийный)."""
+    from bot.utils.ranks import RANK_META, DEFAULT_RANK
+    async with get_db() as db:
+        async with db.execute(
+            "SELECT category_coefficient FROM staff_rank_coefficients WHERE rank = ?",
+            (rank,),
+        ) as cursor:
+            row = await cursor.fetchone()
+            cat_coef = float(row[0]) if row else float(
+                RANK_META.get(rank, RANK_META[DEFAULT_RANK])["default_cat_coef"]
+            )
         await db.execute(
-            "INSERT OR REPLACE INTO staff_rank_coefficients (rank, coefficient) VALUES (?, ?)",
-            (rank, coefficient)
+            """INSERT OR REPLACE INTO staff_rank_coefficients
+                (rank, coefficient, category_coefficient) VALUES (?, ?, ?)""",
+            (rank, coefficient, cat_coef),
+        )
+        await db.commit()
+
+
+async def set_rank_category_coefficient(rank: str, coefficient: float) -> None:
+    """Изменить категорийный коэффициент ранга (сохраняет квестовый)."""
+    from bot.utils.ranks import RANK_META, DEFAULT_RANK
+    async with get_db() as db:
+        async with db.execute(
+            "SELECT coefficient FROM staff_rank_coefficients WHERE rank = ?",
+            (rank,),
+        ) as cursor:
+            row = await cursor.fetchone()
+            quest_coef = float(row[0]) if row else float(
+                RANK_META.get(rank, RANK_META[DEFAULT_RANK])["default_coef"]
+            )
+        await db.execute(
+            """INSERT OR REPLACE INTO staff_rank_coefficients
+                (rank, coefficient, category_coefficient) VALUES (?, ?, ?)""",
+            (rank, quest_coef, coefficient),
         )
         await db.commit()
 

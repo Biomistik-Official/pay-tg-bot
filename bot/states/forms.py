@@ -96,6 +96,11 @@ class SetRankCoefficient(StatesGroup):
     waiting_value = State()         # ввод нового множителя для ранга
 
 
+# Изменение категорийного коэффициента ранга (Admin)
+class SetRankCategoryCoefficient(StatesGroup):
+    waiting_value = State()
+
+
 # Создание квеста (Admin)
 class CreateQuest(StatesGroup):
     waiting_title        = State()

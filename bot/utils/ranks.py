@@ -17,25 +17,29 @@ RANK_META = {
     "grand": {
         "emoji": "🥇",
         "name": "Гранд",
-        "default_coef": 1.0,
+        "default_coef":     1.5,   # квест-коэффициент
+        "default_cat_coef": 1.0,   # категор.-коэффициент
         "description": "Высший ранг Staff. Максимальное доверие, ответственность и полномочия.",
     },
     "vice": {
         "emoji": "🥈",
         "name": "Вице",
-        "default_coef": 0.5,
+        "default_coef":     1.3,
+        "default_cat_coef": 0.5,
         "description": "Заместитель. Высокий уровень доверия и расширенные полномочия.",
     },
     "helper": {
         "emoji": "🥉",
         "name": "Помощник",
-        "default_coef": 0.25,
+        "default_coef":     1.1,
+        "default_cat_coef": 0.25,
         "description": "Опытный участник команды, активно помогает в задачах.",
     },
     "novice": {
         "emoji": "🎓",
         "name": "Новобранец",
-        "default_coef": 0.0,
+        "default_coef":     1.0,
+        "default_cat_coef": 0.0,
         "description": "Начальный ранг. Добро пожаловать в команду Staff!",
     },
 }

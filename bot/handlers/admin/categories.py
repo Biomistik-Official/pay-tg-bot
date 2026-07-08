@@ -367,12 +367,15 @@ async def view_member(callback: CallbackQuery) -> None:
     if not user:
         return await callback.answer("Пользователь не найден.", show_alert=True)
     rank = await queries.get_staff_rank(user["id"])
-    coef = await queries.get_rank_coefficient(rank)
+    quest_coef = await queries.get_rank_coefficient(rank)
+    cat_coef = await queries.get_rank_category_coefficient(rank)
     cat = await queries.get_staff_category(category_id)
     text = (
         f"👤 <b>{user['nickname']}</b>\n"
         f"@{user.get('username') or '—'} | <code>{telegram_id}</code>\n\n"
-        f"🎖 Ранг: {rank_label(rank)} (×{coef:g})\n"
+        f"🎖 Ранг: {rank_label(rank)}\n"
+        f"📋 Квест-коэф.: <b>×{quest_coef:g}</b>\n"
+        f"📂 Кат.-коэф.: <b>×{cat_coef:g}</b>\n"
         f"📂 Категория: <b>{cat['name']}</b> (×{cat['coefficient']:g})"
     )
     await callback.message.edit_text(
@@ -573,46 +576,13 @@ async def salary_start(callback: CallbackQuery, state: FSMContext) -> None:
     members = await queries.get_category_members(category_id)
     if not members:
         return await callback.answer("В категории нет участников.", show_alert=True)
-    await state.set_state(CategorySalary.waiting_base)
-    await state.update_data(category_id=category_id)
-    await callback.message.edit_text(
-        f"💰 <b>Зарплата — {cat['name']}</b>\n\n"
-        f"Введите базовую сумму (в баллах). Например: <code>20</code>\n\n"
-        f"Формула: <i>база × коэф. категории × коэф. ранга</i>",
-        reply_markup=cancel_admin_keyboard(), parse_mode="HTML",
-    )
-    await callback.answer()
 
-
-@router.message(CategorySalary.waiting_base)
-async def salary_calc(message: Message, state: FSMContext) -> None:
-    if not _is_owner(message.from_user.id):
-        return
-    try:
-        base = float(message.text.strip().replace(",", "."))
-        if base <= 0:
-            raise ValueError
-    except ValueError:
-        return await message.answer(
-            "⚠️ Введите положительное число.",
-            reply_markup=cancel_admin_keyboard(),
-        )
-    data = await state.get_data()
-    category_id = data["category_id"]
-    cat = await queries.get_staff_category(category_id)
-    members = await queries.get_category_members(category_id)
-    if not members:
-        await state.clear()
-        return await message.answer(
-            "В категории нет участников.",
-            reply_markup=category_detail_keyboard(category_id),
-        )
-
+    n = len(members)
     items = []
     for m in members:
         rank = m.get("rank") or DEFAULT_RANK
-        rank_coef = await queries.get_rank_coefficient(rank)
-        amount = _round_points(base * cat["coefficient"] * rank_coef)
+        rank_coef = await queries.get_rank_category_coefficient(rank)
+        amount = _round_points(cat["coefficient"] * rank_coef / n)
         items.append({
             "user_id": m["user_id"],
             "telegram_id": m["telegram_id"],
@@ -623,26 +593,28 @@ async def salary_calc(message: Message, state: FSMContext) -> None:
             "amount": amount,
         })
 
-    await state.update_data(base=base, items=items)
     await state.set_state(CategorySalary.waiting_confirm)
+    await state.update_data(category_id=category_id, base=cat["coefficient"], items=items)
 
     lines = [
         f"💰 <b>Предпросмотр — {cat['name']}</b>\n",
-        f"📈 База: <b>{base:g}</b>, коэф. категории: <b>×{cat['coefficient']:g}</b>\n",
+        f"📈 Коэф. категории: <b>×{cat['coefficient']:g}</b> · участников: <b>{n}</b>",
+        f"<i>Формула: кат.коэф.ранга × коэф.категории / N</i>\n",
         "👥 Будет начислено:",
     ]
     for it in items:
         lines.append(
             f"• {it['nickname']} — <b>{it['amount']:g}</b> баллов "
-            f"(ранг {rank_name(it['rank'])} ×{it['rank_coef']:g})"
+            f"({rank_name(it['rank'])} ×{it['rank_coef']:g})"
         )
     total = sum(it["amount"] for it in items)
     lines.append(f"\n🧮 Итого: <b>{total:g}</b> баллов")
-    await message.answer(
+    await callback.message.edit_text(
         "\n".join(lines),
         reply_markup=category_salary_confirm_keyboard(category_id),
         parse_mode="HTML",
     )
+    await callback.answer()
 
 
 @router.callback_query(CategorySalary.waiting_confirm, F.data == "cat_salary_confirm")
@@ -676,8 +648,8 @@ async def salary_apply(callback: CallbackQuery, state: FSMContext, bot) -> None:
                 it["telegram_id"],
                 f"💰 <b>Зарплата — {cat['name']}</b>\n\n"
                 f"Начислено: <b>{it['amount']:g}</b> баллов\n"
-                f"(база {base:g} × ×{cat['coefficient']:g} × "
-                f"{rank_name(it['rank'])} ×{it['rank_coef']:g})",
+                f"({rank_name(it['rank'])} ×{it['rank_coef']:g} × "
+                f"×{cat['coefficient']:g} / {len(items)})",
                 parse_mode="HTML",
             )
         except Exception:
@@ -740,7 +712,7 @@ async def salary_one_pick(callback: CallbackQuery, state: FSMContext) -> None:
     if not cat:
         return await callback.answer("Категория не найдена.", show_alert=True)
     rank = await queries.get_staff_rank(user["id"])
-    rank_coef = await queries.get_rank_coefficient(rank)
+    rank_coef = await queries.get_rank_category_coefficient(rank)
     await state.set_state(CategorySalarySingle.waiting_base)
     await state.update_data(
         category_id=category_id,
@@ -753,7 +725,7 @@ async def salary_one_pick(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.message.edit_text(
         f"👤 <b>Зарплата: {user['nickname']}</b>\n\n"
         f"Категория: {cat['name']} (×{cat['coefficient']:g})\n"
-        f"Ранг: {rank_label(rank)} (×{rank_coef:g})\n\n"
+        f"Ранг: {rank_label(rank)} · кат.коэф. <b>×{rank_coef:g}</b>\n\n"
         f"Введите базовую сумму:",
         reply_markup=cancel_admin_keyboard(), parse_mode="HTML",
     )

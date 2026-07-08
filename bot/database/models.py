@@ -128,8 +128,9 @@ CREATE TABLE IF NOT EXISTS staff_rank_history (
 );
 
 CREATE TABLE IF NOT EXISTS staff_rank_coefficients (
-    rank        TEXT PRIMARY KEY,
-    coefficient REAL NOT NULL
+    rank                 TEXT PRIMARY KEY,
+    coefficient          REAL NOT NULL,
+    category_coefficient REAL NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS staff_categories (
@@ -396,11 +397,21 @@ async def init_db() -> None:
             )
         await db.commit()
 
+        # Миграция: колонка category_coefficient в staff_rank_coefficients
+        async with db.execute("PRAGMA table_info(staff_rank_coefficients)") as cursor:
+            src_columns = [row[1] for row in await cursor.fetchall()]
+        if "category_coefficient" not in src_columns:
+            await db.execute(
+                "ALTER TABLE staff_rank_coefficients ADD COLUMN category_coefficient REAL NOT NULL DEFAULT 0"
+            )
+            await db.commit()
+
         # Вставляем дефолтные коэффициенты рангов Staff (игнорируем, если уже есть)
         for rank, meta in RANK_META.items():
             await db.execute(
-                "INSERT OR IGNORE INTO staff_rank_coefficients (rank, coefficient) VALUES (?, ?)",
-                (rank, meta["default_coef"])
+                """INSERT OR IGNORE INTO staff_rank_coefficients
+                    (rank, coefficient, category_coefficient) VALUES (?, ?, ?)""",
+                (rank, meta["default_coef"], meta["default_cat_coef"])
             )
         await db.commit()
 
@@ -415,10 +426,10 @@ async def init_db() -> None:
                 )
             await db.commit()
 
-        # Одноразовая миграция: обновить описания дефолтных категорий и коэффициенты
-        # рангов до новых значений. Флаг хранится в shop_settings.
+        # Одноразовая миграция: обновить описания дефолтных категорий и оба
+        # коэффициента рангов (квестовый + категорийный) до новых значений.
         async with db.execute(
-            "SELECT value FROM shop_settings WHERE key = 'migration_v2_categories_ranks'"
+            "SELECT value FROM shop_settings WHERE key = 'migration_v3_ranks_split'"
         ) as cur:
             row = await cur.fetchone()
         if not row:
@@ -432,13 +443,13 @@ async def init_db() -> None:
             for rank, meta in RANK_META.items():
                 await db.execute(
                     """UPDATE staff_rank_coefficients
-                       SET coefficient = ?
+                       SET coefficient = ?, category_coefficient = ?
                        WHERE rank = ?""",
-                    (meta["default_coef"], rank),
+                    (meta["default_coef"], meta["default_cat_coef"], rank),
                 )
             await db.execute(
                 "INSERT OR REPLACE INTO shop_settings (key, value) VALUES (?, ?)",
-                ("migration_v2_categories_ranks", "1"),
+                ("migration_v3_ranks_split", "1"),
             )
             await db.commit()
 
