@@ -982,21 +982,20 @@ async def get_quest_stats(quest_id: int) -> dict:
     }
 
 
-async def get_approved_quest_executors(quest_id: int) -> list[dict]:
-    """Получить всех пользователей, у которых квест одобрен (выполнен)."""
+async def get_quest_executors(quest_id: int) -> list[dict]:
+    """Получить всех пользователей, которые взяли квест."""
     async with get_db() as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
-            """SELECT u.telegram_id, u.username, u.nickname
+            """SELECT u.telegram_id, u.username, u.nickname, qa.status, qa.taken_at
                FROM quest_assignments qa
                JOIN users u ON qa.user_id = u.id
-               WHERE qa.quest_id = ? AND qa.status = 'approved'
-               ORDER BY qa.reviewed_at ASC""",
+               WHERE qa.quest_id = ?
+               ORDER BY qa.taken_at ASC""",
             (quest_id,)
         ) as cursor:
             rows = await cursor.fetchall()
             return [dict(r) for r in rows]
-
 
 
 #  QUEST ASSIGNMENTS

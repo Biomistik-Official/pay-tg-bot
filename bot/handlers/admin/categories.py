@@ -647,9 +647,7 @@ async def salary_apply(callback: CallbackQuery, state: FSMContext, bot) -> None:
             await bot.send_message(
                 it["telegram_id"],
                 f"💰 <b>Зарплата — {cat['name']}</b>\n\n"
-                f"Начислено: <b>{it['amount']:g}</b> баллов\n"
-                f"({rank_name(it['rank'])} ×{it['rank_coef']:g} × "
-                f"×{cat['coefficient']:g} / {len(items)})",
+                f"Начислено: <b>{it['amount']:g}</b> баллов",
                 parse_mode="HTML",
             )
         except Exception:

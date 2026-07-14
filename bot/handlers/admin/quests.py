@@ -15,7 +15,7 @@ from bot.keyboards.admin import (
     submissions_nav_keyboard, cancel_admin_keyboard,
 )
 from bot.states.forms import CreateQuest, EditQuest, RejectQuest
-from bot.utils.ranks import apply_coefficient, rank_label
+from bot.utils.ranks import apply_coefficient
 from bot.utils.logger import log_admin_action
 
 router = Router()
@@ -147,7 +147,13 @@ async def show_quest_stats(callback: CallbackQuery) -> None:
     s = await queries.get_quest_stats(quest_id)
     
     reward = _reward_label(q["reward_type"], q["reward_amount"])
-    executors = await queries.get_approved_quest_executors(quest_id)
+    executors = await queries.get_quest_executors(quest_id)
+    status_labels = {
+        "taken": "🟡 в работе",
+        "submitted": "⏳ на проверке",
+        "approved": "✅ одобрено",
+        "rejected": "❌ отклонено",
+    }
     
     executors_list = []
     for idx, e in enumerate(executors, 1):
@@ -156,7 +162,8 @@ async def show_quest_stats(callback: CallbackQuery) -> None:
         else:
             escaped_nickname = html.escape(e['nickname'])
             tag = f"<a href=\"tg://user?id={e['telegram_id']}\">{escaped_nickname}</a>"
-        executors_list.append(f"{idx}. {tag}")
+        status = status_labels.get(e["status"], e["status"])
+        executors_list.append(f"{idx}. {tag} — {status}")
     
     executors_str = "\n".join(executors_list) if executors_list else "—"
     
@@ -168,7 +175,7 @@ async def show_quest_stats(callback: CallbackQuery) -> None:
         f"\u2705 Одобрено: <b>{s['approved']}</b>\n"
         f"\u274c Отклонено: <b>{s['rejected']}</b>\n"
         f"Всего: <b>{s['total']}</b>\n\n"
-        f"Выполнили:\n{executors_str}"
+        f"Взяли квест:\n{executors_str}"
     )
     await _edit_or_reply(
         callback,
@@ -637,21 +644,13 @@ async def approve_quest(callback: CallbackQuery, bot) -> None:
     await queries.record_assignment_payout(assignment_id, coefficient, final_amount)
 
     reward_label = _reward_label(reward_type, final_amount)
-    coef_note = ""
-    if reward_mode == "coefficient":
-        coef_note = (
-            f"\n\n🎖 Ранг: <b>{rank_label(rank)}</b>\n"
-            f"📈 Коэффициент: <b>×{coefficient:g}</b>\n"
-            f"<i>Базовая награда: {_reward_label(reward_type, base_amount)}</i>"
-        )
     r_icon = "\u2b50" if reward_type == "points" else "\U0001f3ab"
     try:
         await bot.send_message(
             a["user_telegram_id"],
             f"\U0001f389 <b>Квест принят!</b>\n\n"
             f"Квест: <b>{a['title']}</b>\n\n"
-            f"Вам начислено:\n{r_icon} <b>{reward_label}</b>"
-            f"{coef_note}",
+            f"Вам начислено:\n{r_icon} <b>{reward_label}</b>",
             parse_mode="HTML",
         )
     except Exception:

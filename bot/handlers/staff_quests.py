@@ -2,6 +2,7 @@
 Интерфейс квестов для Staff.
 """
 import asyncio
+import html
 from aiogram import Router, F, Bot
 from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.context import FSMContext
@@ -45,6 +46,16 @@ async def _get_user_id(telegram_id: int):
 def _reward_str(reward_type: str, amount: float) -> str:
     label = REWARD_TYPES.get(reward_type, reward_type)
     return f"{amount:g} {label}"
+
+
+def _executors_note(executors: list[dict]) -> str:
+    if not executors:
+        return "\n👤 Взяли квест: <b>—</b>"
+    names = []
+    for executor in executors:
+        nickname = html.escape(executor["nickname"])
+        names.append(f'<a href="tg://user?id={executor["telegram_id"]}">{nickname}</a>')
+    return f"\n👤 Взяли квест: {', '.join(names)}"
 
 
 async def _coef_reward_note(q: dict, user_id: int) -> str:
@@ -126,6 +137,7 @@ async def show_quest_detail(callback: CallbackQuery) -> None:
         return await callback.answer("Квест недоступен.", show_alert=True)
 
     executors = await queries.count_quest_executors(quest_id)
+    executor_users = await queries.get_quest_executors(quest_id)
     free_slots = q["max_executors"] - executors
     can_take = free_slots > 0
     existing = await queries.get_user_quest_assignment(quest_id, user_id)
@@ -140,7 +152,8 @@ async def show_quest_detail(callback: CallbackQuery) -> None:
         f"\U0001f4cb <b>{q['title']}</b>\n\n"
         f"\U0001f4c4 {q['description']}\n\n"
         f"\U0001f381 Награда: <b>{reward}</b>\n"
-        f"\U0001f465 Исполнители: <b>{slots_text}</b>\n"
+        f"\U0001f465 Исполнители: <b>{slots_text}</b>"
+        f"{_executors_note(executor_users)}\n"
         f"\U0001f4c5 Срок: <b>{deadline}</b>"
         f"{coef_note}"
     )
@@ -167,6 +180,7 @@ async def take_quest(callback: CallbackQuery) -> None:
     # Обновить детали
     q = await queries.get_quest_by_id(quest_id)
     executors = await queries.count_quest_executors(quest_id)
+    executor_users = await queries.get_quest_executors(quest_id)
     deadline = q["deadline"] or "—"
     reward = _reward_str(q["reward_type"], q["reward_amount"])
     slots_text = f"{executors}/{q['max_executors']}"
@@ -175,7 +189,8 @@ async def take_quest(callback: CallbackQuery) -> None:
         f"\U0001f4cb <b>{q['title']}</b>\n\n"
         f"\U0001f4c4 {q['description']}\n\n"
         f"\U0001f381 Награда: <b>{reward}</b>\n"
-        f"\U0001f465 Исполнители: <b>{slots_text}</b>\n"
+        f"\U0001f465 Исполнители: <b>{slots_text}</b>"
+        f"{_executors_note(executor_users)}\n"
         f"\U0001f4c5 Срок: <b>{deadline}</b>"
         f"{coef_note}"
     )
