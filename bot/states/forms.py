@@ -109,6 +109,7 @@ class CreateQuest(StatesGroup):
     waiting_reward_amount = State()
     waiting_reward_mode  = State()   # обычная награда / награда с коэффициентом
     waiting_max_executors = State()
+    waiting_repeat_mode  = State()
     waiting_deadline     = State()
 
 

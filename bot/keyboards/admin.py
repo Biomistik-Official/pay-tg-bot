@@ -643,6 +643,10 @@ def quest_edit_field_keyboard(quest_id: int) -> InlineKeyboardMarkup:
         text="🎯 Тип награды (переключить)",
         callback_data=f"quest_toggle_mode:{quest_id}"
     ))
+    builder.row(InlineKeyboardButton(
+        text="🔁 Повторное выполнение (переключить)",
+        callback_data=f"quest_toggle_repeat:{quest_id}"
+    ))
     builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"quest_detail:{quest_id}"))
     return builder.as_markup()
 

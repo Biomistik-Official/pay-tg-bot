@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS quests (
     reward_amount   REAL NOT NULL,
     reward_mode     TEXT NOT NULL DEFAULT 'flat' CHECK(reward_mode IN ('flat', 'coefficient')),
     max_executors   INTEGER NOT NULL DEFAULT 1,
+    repeatable      INTEGER NOT NULL DEFAULT 0 CHECK(repeatable IN (0, 1)),
     deadline        TEXT,
     status          TEXT DEFAULT 'active' CHECK(status IN ('active', 'closed')),
     created_by      INTEGER,
@@ -113,9 +114,12 @@ CREATE TABLE IF NOT EXISTS quest_assignments (
     applied_coefficient REAL,
     paid_amount     REAL,
     FOREIGN KEY (quest_id) REFERENCES quests(id),
-    FOREIGN KEY (user_id) REFERENCES users(id),
-    UNIQUE(quest_id, user_id)
+    FOREIGN KEY (user_id) REFERENCES users(id)
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_quest_assignments_active_user
+ON quest_assignments (quest_id, user_id)
+WHERE status IN ('taken', 'submitted');
 
 CREATE TABLE IF NOT EXISTS staff_rank_history (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -330,6 +334,7 @@ async def init_db() -> None:
                         reward_type     TEXT NOT NULL,
                         reward_amount   REAL NOT NULL,
                         max_executors   INTEGER NOT NULL DEFAULT 1,
+                        repeatable      INTEGER NOT NULL DEFAULT 0,
                         deadline        TEXT,
                         status          TEXT DEFAULT 'active' CHECK(status IN ('active', 'closed')),
                         created_by      INTEGER,
@@ -354,9 +359,13 @@ async def init_db() -> None:
                         reviewed_by     INTEGER,
                         reject_reason   TEXT,
                         FOREIGN KEY (quest_id) REFERENCES quests(id),
-                        FOREIGN KEY (user_id) REFERENCES users(id),
-                        UNIQUE(quest_id, user_id)
+                        FOREIGN KEY (user_id) REFERENCES users(id)
                     )
+                """)
+                await db.execute("""
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_quest_assignments_active_user
+                    ON quest_assignments (quest_id, user_id)
+                    WHERE status IN ('taken', 'submitted')
                 """)
                 await db.commit()
 
@@ -378,6 +387,9 @@ async def init_db() -> None:
         if "reward_mode" not in quest_columns:
             await db.execute("ALTER TABLE quests ADD COLUMN reward_mode TEXT NOT NULL DEFAULT 'flat'")
             await db.commit()
+        if "repeatable" not in quest_columns:
+            await db.execute("ALTER TABLE quests ADD COLUMN repeatable INTEGER NOT NULL DEFAULT 0")
+            await db.commit()
 
         # Миграция: применённый коэффициент и фактическая награда в quest_assignments
         async with db.execute("PRAGMA table_info(quest_assignments)") as cursor:
@@ -388,6 +400,52 @@ async def init_db() -> None:
         if "paid_amount" not in qa_columns:
             await db.execute("ALTER TABLE quest_assignments ADD COLUMN paid_amount REAL")
             await db.commit()
+
+        async with db.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='quest_assignments'"
+        ) as cursor:
+            row = await cursor.fetchone()
+        assignment_sql = "".join((row[0] if row else "").lower().split())
+        if "unique(quest_id,user_id)" in assignment_sql:
+            await db.execute("ALTER TABLE quest_assignments RENAME TO quest_assignments_old")
+            await db.execute("""
+                CREATE TABLE quest_assignments (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    quest_id        INTEGER NOT NULL,
+                    user_id         INTEGER NOT NULL,
+                    status          TEXT DEFAULT 'taken' CHECK(status IN ('taken', 'submitted', 'approved', 'rejected')),
+                    taken_at        TEXT DEFAULT (datetime('now')),
+                    submitted_at    TEXT,
+                    submitted_text  TEXT,
+                    submitted_photo TEXT,
+                    reviewed_at     TEXT,
+                    reviewed_by     INTEGER,
+                    reject_reason   TEXT,
+                    applied_coefficient REAL,
+                    paid_amount     REAL,
+                    FOREIGN KEY (quest_id) REFERENCES quests(id),
+                    FOREIGN KEY (user_id) REFERENCES users(id)
+                )
+            """)
+            await db.execute("""
+                INSERT INTO quest_assignments (
+                    id, quest_id, user_id, status, taken_at, submitted_at,
+                    submitted_text, submitted_photo, reviewed_at, reviewed_by,
+                    reject_reason, applied_coefficient, paid_amount
+                )
+                SELECT id, quest_id, user_id, status, taken_at, submitted_at,
+                       submitted_text, submitted_photo, reviewed_at, reviewed_by,
+                       reject_reason, applied_coefficient, paid_amount
+                FROM quest_assignments_old
+            """)
+            await db.execute("DROP TABLE quest_assignments_old")
+
+        await db.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_quest_assignments_active_user
+            ON quest_assignments (quest_id, user_id)
+            WHERE status IN ('taken', 'submitted')
+        """)
+        await db.commit()
 
         # Вставляем дефолтные настройки магазина (игнорируем, если уже есть)
         for key, value in DEFAULT_SHOP_SETTINGS:

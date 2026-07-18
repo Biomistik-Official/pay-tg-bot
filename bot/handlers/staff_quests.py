@@ -136,12 +136,18 @@ async def show_quest_detail(callback: CallbackQuery) -> None:
     if not q or q["status"] != "active":
         return await callback.answer("Квест недоступен.", show_alert=True)
 
+    repeatable = bool(q.get("repeatable"))
     executors = await queries.count_quest_executors(quest_id)
-    executor_users = await queries.get_quest_executors(quest_id)
+    if repeatable:
+        executor_users = await queries.get_current_quest_executors(quest_id)
+    else:
+        executor_users = await queries.get_quest_executors(quest_id)
     free_slots = q["max_executors"] - executors
     can_take = free_slots > 0
     existing = await queries.get_user_quest_assignment(quest_id, user_id)
-    already_taken = existing is not None
+    already_taken = existing is not None and (
+        not repeatable or existing["status"] in ("taken", "submitted")
+    )
 
     deadline = q["deadline"] or "—"
     reward = _reward_str(q["reward_type"], q["reward_amount"])
@@ -154,6 +160,7 @@ async def show_quest_detail(callback: CallbackQuery) -> None:
         f"\U0001f381 Награда: <b>{reward}</b>\n"
         f"\U0001f465 Исполнители: <b>{slots_text}</b>"
         f"{_executors_note(executor_users)}\n"
+        f"🔁 Повторное выполнение: <b>{'разрешено' if repeatable else 'нет'}</b>\n"
         f"\U0001f4c5 Срок: <b>{deadline}</b>"
         f"{coef_note}"
     )
@@ -180,7 +187,10 @@ async def take_quest(callback: CallbackQuery) -> None:
     # Обновить детали
     q = await queries.get_quest_by_id(quest_id)
     executors = await queries.count_quest_executors(quest_id)
-    executor_users = await queries.get_quest_executors(quest_id)
+    if q.get("repeatable"):
+        executor_users = await queries.get_current_quest_executors(quest_id)
+    else:
+        executor_users = await queries.get_quest_executors(quest_id)
     deadline = q["deadline"] or "—"
     reward = _reward_str(q["reward_type"], q["reward_amount"])
     slots_text = f"{executors}/{q['max_executors']}"
@@ -191,6 +201,7 @@ async def take_quest(callback: CallbackQuery) -> None:
         f"\U0001f381 Награда: <b>{reward}</b>\n"
         f"\U0001f465 Исполнители: <b>{slots_text}</b>"
         f"{_executors_note(executor_users)}\n"
+        f"🔁 Повторное выполнение: <b>{'разрешено' if q.get('repeatable') else 'нет'}</b>\n"
         f"\U0001f4c5 Срок: <b>{deadline}</b>"
         f"{coef_note}"
     )

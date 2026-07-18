@@ -35,6 +35,11 @@ REWARD_MODES = {
     "coefficient": "\U0001f4c8 Награда с коэффициентом",
 }
 
+REPEAT_MODES = {
+    "single": "1 раз для каждого человека",
+    "multiple": "Можно выполнять несколько раз",
+}
+
 
 def _is_owner(uid: int) -> bool:
     return uid == config.owner_id
@@ -68,12 +73,14 @@ def _quest_text(q: dict) -> str:
     deadline = q["deadline"] or "—"
     reward = _reward_label(q["reward_type"], q["reward_amount"])
     mode = _reward_mode_label(q.get("reward_mode", "flat"))
+    repeat_mode = REPEAT_MODES["multiple"] if q.get("repeatable") else REPEAT_MODES["single"]
     return (
         f"\U0001f4cb <b>{q['title']}</b>\n\n"
         f"\U0001f4c4 {q['description']}\n\n"
         f"\U0001f381 Награда: <b>{reward}</b>\n"
         f"\U0001f3af Тип награды: <b>{mode}</b>\n"
         f"\U0001f465 Макс. исполнителей: <b>{q['max_executors']}</b>\n"
+        f"🔁 Выполнение: <b>{repeat_mode}</b>\n"
         f"\U0001f4c5 Срок: <b>{deadline}</b>\n"
         f"Статус: <b>{status}</b>"
     )
@@ -243,7 +250,7 @@ async def start_create_quest(callback: CallbackQuery, state: FSMContext) -> None
     await state.set_state(CreateQuest.waiting_title)
     await _edit_or_reply(
         callback,
-        "\U0001f4dd <b>Создание квеста</b>\n\nШаг 1/7 — Введите <b>название</b> квеста:",
+        "\U0001f4dd <b>Создание квеста</b>\n\nШаг 1/8 — Введите <b>название</b> квеста:",
         reply_markup=cancel_admin_keyboard(),
     )
     await callback.answer()
@@ -259,7 +266,7 @@ async def cq_title(message: Message, state: FSMContext) -> None:
     await state.update_data(title=title)
     await state.set_state(CreateQuest.waiting_description)
     await message.answer(
-        "Шаг 2/7 — Введите <b>описание</b> квеста:",
+        "Шаг 2/8 — Введите <b>описание</b> квеста:",
         reply_markup=cancel_admin_keyboard(),
         parse_mode="HTML",
     )
@@ -278,7 +285,7 @@ async def cq_description(message: Message, state: FSMContext) -> None:
         builder.row(InlineKeyboardButton(text=label, callback_data=f"cq_rtype:{key}"))
     builder.row(InlineKeyboardButton(text="\u274c Отмена", callback_data="cancel_admin_form"))
     await message.answer(
-        "Шаг 3/7 — Выберите <b>тип награды</b>:",
+        "Шаг 3/8 — Выберите <b>тип награды</b>:",
         reply_markup=builder.as_markup(),
         parse_mode="HTML",
     )
@@ -293,7 +300,7 @@ async def cq_reward_type(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(CreateQuest.waiting_reward_amount)
     await _edit_or_reply(
         callback,
-        "Шаг 4/7 — Введите <b>количество</b> награды (число):",
+        "Шаг 4/8 — Введите <b>количество</b> награды (число):",
         reply_markup=cancel_admin_keyboard(),
     )
     await callback.answer()
@@ -318,7 +325,7 @@ async def cq_reward_amount(message: Message, state: FSMContext) -> None:
         builder.row(InlineKeyboardButton(text=label, callback_data=f"cq_rmode:{key}"))
     builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_admin_form"))
     await message.answer(
-        "Шаг 5/7 — Выберите <b>тип награды</b>:\n\n"
+        "Шаг 5/8 — Выберите <b>тип награды</b>:\n\n"
         "⭐ <b>Обычная награда</b> — все Staff получают одинаковую награду.\n"
         "\U0001f4c8 <b>Награда с коэффициентом</b> — итоговая награда = базовая × коэффициент ранга Staff.",
         reply_markup=builder.as_markup(),
@@ -337,7 +344,7 @@ async def cq_reward_mode(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(CreateQuest.waiting_max_executors)
     await _edit_or_reply(
         callback,
-        "Шаг 6/7 — Введите <b>максимальное количество исполнителей</b>:",
+        "Шаг 6/8 — Введите <b>максимальное количество исполнителей</b>:",
         reply_markup=cancel_admin_keyboard(),
     )
     await callback.answer()
@@ -354,17 +361,41 @@ async def cq_max_exec(message: Message, state: FSMContext) -> None:
     except ValueError:
         return await message.answer("\u26a0\ufe0f Введите целое число >= 1.", reply_markup=cancel_admin_keyboard())
     await state.update_data(max_executors=n)
+    await state.set_state(CreateQuest.waiting_repeat_mode)
+    from aiogram.types import InlineKeyboardButton
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    builder = InlineKeyboardBuilder()
+    for key, label in REPEAT_MODES.items():
+        builder.row(InlineKeyboardButton(text=label, callback_data=f"cq_repeat:{key}"))
+    builder.row(InlineKeyboardButton(text="\u274c Отмена", callback_data="cancel_admin_form"))
+    await message.answer(
+        "Шаг 7/8 — Выберите, сможет ли один человек выполнять квест повторно:\n\n"
+        "Для повторяемого квеста лимит исполнителей действует одновременно.",
+        reply_markup=builder.as_markup(),
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data.startswith("cq_repeat:"), CreateQuest.waiting_repeat_mode)
+async def cq_repeat_mode(callback: CallbackQuery, state: FSMContext) -> None:
+    if not _is_owner(callback.from_user.id):
+        return await callback.answer("No access.", show_alert=True)
+    mode = callback.data.split(":")[1]
+    if mode not in REPEAT_MODES:
+        mode = "single"
+    await state.update_data(repeatable=mode == "multiple")
     await state.set_state(CreateQuest.waiting_deadline)
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    from aiogram.types import InlineKeyboardButton
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="\u23ed\ufe0f Без срока", callback_data="cq_no_deadline"))
     builder.row(InlineKeyboardButton(text="\u274c Отмена", callback_data="cancel_admin_form"))
-    await message.answer(
-        "Шаг 7/7 — Введите <b>срок выполнения</b> (например, 30.06.2025) или нажмите «Без срока»:",
+    await _edit_or_reply(
+        callback,
+        "Шаг 8/8 — Введите <b>срок выполнения</b> (например, 30.06.2025) или нажмите «Без срока»:",
         reply_markup=builder.as_markup(),
-        parse_mode="HTML",
     )
+    await callback.answer()
 
 
 @router.callback_query(F.data == "cq_no_deadline")
@@ -394,6 +425,7 @@ async def _finalize_quest(target, state: FSMContext, deadline, bot: Bot) -> None
         deadline=deadline,
         created_by=config.owner_id,
         reward_mode=data.get("reward_mode", "flat"),
+        repeatable=data.get("repeatable", False),
     )
     q = await queries.get_quest_by_id(quest_id)
     if hasattr(target, "answer"):
@@ -425,6 +457,7 @@ async def _finalize_quest(target, state: FSMContext, deadline, bot: Bot) -> None
                 f"📝 Описание:\n{q['description']}\n\n"
                 f"🎁 Награда: <b>{reward}</b>\n"
                 f"👥 Макс. исполнителей: <b>{q['max_executors']}</b>\n"
+                f"🔁 Выполнение: <b>{REPEAT_MODES['multiple'] if q.get('repeatable') else REPEAT_MODES['single']}</b>\n"
                 f"📅 Срок: <b>{deadline_val}</b>\n\n"
                 f"━━━━━━━━━━━━━━━━━━"
             )
@@ -550,6 +583,28 @@ async def toggle_reward_mode(callback: CallbackQuery) -> None:
     )
 
 
+@router.callback_query(F.data.startswith("quest_toggle_repeat:"))
+async def toggle_repeat_mode(callback: CallbackQuery) -> None:
+    if not _is_owner(callback.from_user.id):
+        return await callback.answer("No access.", show_alert=True)
+    quest_id = int(callback.data.split(":")[1])
+    q = await queries.get_quest_by_id(quest_id)
+    if not q:
+        return await callback.answer("Квест не найден.", show_alert=True)
+    repeatable = not bool(q.get("repeatable"))
+    await queries.update_quest(quest_id, repeatable=int(repeatable))
+    await callback.answer(
+        f"Выполнение: {REPEAT_MODES['multiple'] if repeatable else REPEAT_MODES['single']}",
+        show_alert=True,
+    )
+    q = await queries.get_quest_by_id(quest_id)
+    await _edit_or_reply(
+        callback,
+        _quest_text(q),
+        reply_markup=quest_detail_admin_keyboard(quest_id, q["status"] == "active"),
+    )
+
+
 # Проверка квестов
 
 @router.callback_query(F.data.in_({"quest_submissions"}) | F.data.startswith("quest_submissions:"))
@@ -608,7 +663,7 @@ async def approve_quest(callback: CallbackQuery, bot) -> None:
     # Проверить, закрывать ли квест
     quest_id = a["quest_id"]
     q = await queries.get_quest_by_id(quest_id)
-    if q:
+    if q and not q.get("repeatable"):
         q_stats = await queries.get_quest_stats(quest_id)
         if q_stats["approved"] >= q["max_executors"]:
             await queries.close_quest(quest_id)

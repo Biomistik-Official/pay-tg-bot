@@ -879,15 +879,16 @@ async def create_quest(
     deadline: Optional[str],
     created_by: int,
     reward_mode: str = "flat",
+    repeatable: bool = False,
 ) -> int:
     """Создать квест. Возвращает ID квеста."""
     async with get_db() as db:
         cursor = await db.execute(
             """INSERT INTO quests (title, description, reward_type, reward_amount,
-                                   reward_mode, max_executors, deadline, created_by)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                                   reward_mode, max_executors, repeatable, deadline, created_by)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (title, description, reward_type, reward_amount, reward_mode,
-             max_executors, deadline, created_by)
+             max_executors, int(repeatable), deadline, created_by)
         )
         await db.commit()
         return cursor.lastrowid
@@ -929,7 +930,7 @@ async def get_all_quests() -> list[dict]:
 async def update_quest(quest_id: int, **fields) -> None:
     """Обновить поля квеста."""
     allowed = {"title", "description", "reward_type", "reward_amount",
-                "reward_mode", "max_executors", "deadline", "status"}
+                "reward_mode", "max_executors", "repeatable", "deadline", "status"}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         return
@@ -998,29 +999,58 @@ async def get_quest_executors(quest_id: int) -> list[dict]:
             return [dict(r) for r in rows]
 
 
+async def get_current_quest_executors(quest_id: int) -> list[dict]:
+    """Получить текущих исполнителей квеста."""
+    async with get_db() as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """SELECT u.telegram_id, u.username, u.nickname, qa.status, qa.taken_at
+               FROM quest_assignments qa
+               JOIN users u ON qa.user_id = u.id
+               WHERE qa.quest_id = ? AND qa.status IN ('taken', 'submitted')
+               ORDER BY qa.taken_at ASC""",
+            (quest_id,)
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
+
+
 #  QUEST ASSIGNMENTS
 
 async def take_quest(quest_id: int, user_id: int) -> bool:
     """Взять квест. Возвращает True при успехе, False если уже взят или лимит."""
     async with get_db() as db:
-        # Проверить лимит
-        async with db.execute(
-            "SELECT max_executors FROM quests WHERE id = ?", (quest_id,)
-        ) as c:
-            row = await c.fetchone()
-            if not row:
-                return False
-            max_exec = row[0]
-
-        async with db.execute(
-            "SELECT COUNT(*) FROM quest_assignments WHERE quest_id = ?", (quest_id,)
-        ) as c:
-            current = (await c.fetchone())[0]
-
-        if current >= max_exec:
-            return False
-
         try:
+            await db.execute("BEGIN IMMEDIATE")
+            async with db.execute(
+                "SELECT max_executors, repeatable, status FROM quests WHERE id = ?",
+                (quest_id,)
+            ) as c:
+                row = await c.fetchone()
+            if not row or row[2] != "active":
+                await db.rollback()
+                return False
+
+            max_exec, repeatable = row[0], bool(row[1])
+            status_filter = "AND status IN ('taken', 'submitted')" if repeatable else ""
+            async with db.execute(
+                f"SELECT COUNT(*) FROM quest_assignments WHERE quest_id = ? {status_filter}",
+                (quest_id,)
+            ) as c:
+                current = (await c.fetchone())[0]
+            if current >= max_exec:
+                await db.rollback()
+                return False
+
+            user_status_filter = "AND status IN ('taken', 'submitted')" if repeatable else ""
+            async with db.execute(
+                f"SELECT 1 FROM quest_assignments WHERE quest_id = ? AND user_id = ? {user_status_filter} LIMIT 1",
+                (quest_id, user_id)
+            ) as c:
+                if await c.fetchone():
+                    await db.rollback()
+                    return False
+
             await db.execute(
                 """INSERT INTO quest_assignments (quest_id, user_id)
                    VALUES (?, ?)""",
@@ -1029,6 +1059,7 @@ async def take_quest(quest_id: int, user_id: int) -> bool:
             await db.commit()
             return True
         except Exception:
+            await db.rollback()
             return False
 
 
@@ -1040,7 +1071,10 @@ async def get_user_quest_assignment(quest_id: int, user_id: int) -> Optional[dic
             "SELECT * FROM quest_assignments WHERE quest_id = ? AND user_id = ?",
             (quest_id, user_id)
         ) as cursor:
-            row = await cursor.fetchone()
+            rows = await cursor.fetchall()
+            row = next((r for r in rows if r["status"] in ("taken", "submitted")), None)
+            if row is None and rows:
+                row = max(rows, key=lambda r: r["id"])
             return dict(row) if row else None
 
 
@@ -1066,7 +1100,12 @@ async def count_quest_executors(quest_id: int) -> int:
     """Подсчитать текущее количество исполнителей квеста."""
     async with get_db() as db:
         async with db.execute(
-            "SELECT COUNT(*) FROM quest_assignments WHERE quest_id = ?", (quest_id,)
+            """SELECT COUNT(*)
+               FROM quest_assignments qa
+               JOIN quests q ON q.id = qa.quest_id
+               WHERE qa.quest_id = ?
+                 AND (q.repeatable = 0 OR qa.status IN ('taken', 'submitted'))""",
+            (quest_id,)
         ) as cursor:
             row = await cursor.fetchone()
             return row[0] if row else 0
