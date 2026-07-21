@@ -287,14 +287,17 @@ async def create_request(
     user_id: int,
     currency_type: str,
     amount: float,
-    reason: str
+    reason: str,
+    media_type: str | None = None,
+    media_file_id: str | None = None
 ) -> int:
     """Создать заявку на валюту. Возвращает ID заявки."""
     async with get_db() as db:
         cursor = await db.execute(
-            """INSERT INTO requests (user_id, currency_type, amount, reason)
-               VALUES (?, ?, ?, ?)""",
-            (user_id, currency_type, amount, reason)
+            """INSERT INTO requests (
+                   user_id, currency_type, amount, reason, media_type, media_file_id
+               ) VALUES (?, ?, ?, ?, ?, ?)""",
+            (user_id, currency_type, amount, reason, media_type, media_file_id)
         )
         await db.commit()
         return cursor.lastrowid
@@ -1111,15 +1114,20 @@ async def count_quest_executors(quest_id: int) -> int:
             return row[0] if row else 0
 
 
-async def submit_quest(assignment_id: int, text: Optional[str], photo: Optional[str]) -> None:
+async def submit_quest(
+    assignment_id: int,
+    text: Optional[str],
+    photo: Optional[str],
+    video: Optional[str] = None
+) -> None:
     """Отправить квест на проверку."""
     async with get_db() as db:
         await db.execute(
             """UPDATE quest_assignments
                SET status = 'submitted', submitted_at = datetime('now'),
-                   submitted_text = ?, submitted_photo = ?
+                   submitted_text = ?, submitted_photo = ?, submitted_video = ?
                WHERE id = ?""",
-            (text, photo, assignment_id)
+            (text, photo, video, assignment_id)
         )
         await db.commit()
 

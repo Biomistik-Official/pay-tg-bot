@@ -7,6 +7,8 @@
 Баллы — числовые, вводятся вручную.
 """
 
+from html import escape
+
 from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
@@ -24,11 +26,24 @@ from bot.keyboards.admin import request_action_keyboard
 from bot.states.forms import RequestTickets, RequestPoints
 from bot.utils.formatters import format_request_for_owner
 from bot.utils.logger import logger
+from bot.utils.request_media import send_request_media
 
 router = Router()
 
 # Словарь типов тикетов: ключ → (emoji, название, стоимость в баллах)
 TICKET_INFO = {key: (emoji, name, value) for key, emoji, name, value in TICKET_TYPES}
+
+
+def _get_reason_and_media(message: Message) -> tuple[str, str | None, str | None] | None:
+    if message.photo:
+        reason = (message.caption or "").strip() or "Фото без комментария"
+        return reason, "photo", message.photo[-1].file_id
+    if message.video:
+        reason = (message.caption or "").strip() or "Видео без комментария"
+        return reason, "video", message.video.file_id
+    if message.text:
+        return message.text.strip(), None, None
+    return None
 
 
 async def _check_daily_limit(user: dict, callback: CallbackQuery) -> bool:
@@ -199,7 +214,8 @@ async def request_tickets_amount(message: Message, state: FSMContext) -> None:
 
     await message.answer(
         f"🎫 <b>{ticket_emoji} {ticket_name} тикет × {amount} шт.</b>\n\n"
-        "📝 Теперь напишите <b>причину</b> получения тикетов:",
+        "📝 Напишите <b>причину</b> или отправьте фото/видео с доказательством.\n"
+        "Подпись к фото или видео необязательна:",
         reply_markup=cancel_keyboard(),
         parse_mode="HTML"
     )
@@ -210,14 +226,15 @@ async def request_tickets_amount(message: Message, state: FSMContext) -> None:
 @router.message(RequestTickets.waiting_reason)
 async def request_tickets_reason(message: Message, state: FSMContext, bot: Bot) -> None:
     """Обработать причину и отправить заявку на тикеты."""
-    if not message.text:
+    request_data = _get_reason_and_media(message)
+    if not request_data:
         await message.answer(
-            "⚠️ Пожалуйста, напишите текстовую причину получения тикета.",
+            "⚠️ Отправьте текстовую причину, фото или видео с доказательством.",
             reply_markup=cancel_keyboard()
         )
         return
 
-    reason = message.text.strip()
+    reason, media_type, media_file_id = request_data
     if len(reason) < 3:
         await message.answer(
             "⚠️ Причина слишком короткая. Минимум 3 символа.",
@@ -235,30 +252,37 @@ async def request_tickets_reason(message: Message, state: FSMContext, bot: Bot) 
     user = await queries.get_user_by_telegram_id(message.from_user.id)
 
     # Создаём заявку в БД: amount = введённое количество тикетов, reason = чистый текст
-    full_reason = reason
     request_id = await queries.create_request(
         user_id=user["id"],
         currency_type=f"tickets_{ticket_key}",
         amount=ticket_amount,
-        reason=full_reason
+        reason=reason,
+        media_type=media_type,
+        media_file_id=media_file_id
     )
     req = await queries.get_request_by_id(request_id)
 
     await state.clear()
 
     value_str = f"{ticket_value:g}"
+    attachment_line = "📎 Доказательство прикреплено\n" if media_type else ""
 
     # Уведомляем пользователя
     await message.answer(
         f"✅ <b>Заявка на тикеты отправлена!</b>\n\n"
         f"{ticket_emoji} <b>{ticket_name} тикет × {ticket_amount} шт.</b>\n"
-        f"📝 Причина: {reason}\n\n"
+        f"📝 Причина: {escape(reason)}\n"
+        f"{attachment_line}\n"
         "Ожидайте решения владельца.",
         parse_mode="HTML"
     )
 
     # Уведомляем Owner
     owner_text = format_request_for_owner(req, user)
+    try:
+        await send_request_media(bot, config.owner_id, req)
+    except Exception as e:
+        logger.error(f"Не удалось отправить доказательство Owner для заявки #{request_id}: {e}")
     try:
         await bot.send_message(
             config.owner_id,
@@ -324,7 +348,8 @@ async def request_points_amount(message: Message, state: FSMContext) -> None:
     amount_str = f"{amount:g}"
     await message.answer(
         f"⭐ Количество: <b>{amount_str}</b>\n\n"
-        "📝 Теперь напишите причину получения баллов:",
+        "📝 Напишите причину или отправьте фото/видео с доказательством.\n"
+        "Подпись к фото или видео необязательна:",
         reply_markup=cancel_keyboard(),
         parse_mode="HTML"
     )
@@ -333,14 +358,15 @@ async def request_points_amount(message: Message, state: FSMContext) -> None:
 @router.message(RequestPoints.waiting_reason)
 async def request_points_reason(message: Message, state: FSMContext, bot: Bot) -> None:
     """Обработать причину и отправить заявку на баллы."""
-    if not message.text:
+    request_data = _get_reason_and_media(message)
+    if not request_data:
         await message.answer(
-            "⚠️ Пожалуйста, напишите текстовую причину получения баллов.",
+            "⚠️ Отправьте текстовую причину, фото или видео с доказательством.",
             reply_markup=cancel_keyboard()
         )
         return
 
-    reason = message.text.strip()
+    reason, media_type, media_file_id = request_data
     if len(reason) < 3:
         await message.answer(
             "⚠️ Причина слишком короткая. Минимум 3 символа.",
@@ -357,25 +383,33 @@ async def request_points_reason(message: Message, state: FSMContext, bot: Bot) -
         user_id=user["id"],
         currency_type="points",
         amount=amount,
-        reason=reason
+        reason=reason,
+        media_type=media_type,
+        media_file_id=media_file_id
     )
     req = await queries.get_request_by_id(request_id)
 
     await state.clear()
 
     amount_str = f"{amount:g}"
+    attachment_line = "📎 Доказательство прикреплено\n" if media_type else ""
 
     # Уведомляем пользователя
     await message.answer(
         f"✅ <b>Заявка на баллы отправлена!</b>\n\n"
         f"⭐ Количество: <b>{amount_str}</b>\n"
-        f"📝 Причина: {reason}\n\n"
+        f"📝 Причина: {escape(reason)}\n"
+        f"{attachment_line}\n"
         "Ожидайте решения владельца.",
         parse_mode="HTML"
     )
 
     # Уведомляем Owner
     owner_text = format_request_for_owner(req, user)
+    try:
+        await send_request_media(bot, config.owner_id, req)
+    except Exception as e:
+        logger.error(f"Не удалось отправить доказательство Owner для заявки #{request_id}: {e}")
     try:
         await bot.send_message(
             config.owner_id,

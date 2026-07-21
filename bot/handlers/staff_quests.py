@@ -285,7 +285,8 @@ async def start_submit_quest(callback: CallbackQuery, state: FSMContext) -> None
     await state.update_data(assignment_id=assignment_id)
     await callback.message.edit_text(
         "\U0001f4e8 <b>Отправка на проверку</b>\n\n"
-        "Отправьте текстовый отчёт и/или фото.\n"
+        "Отправьте текстовый отчёт, одно фото или одно видео.\n"
+        "К фото или видео можно добавить подпись.\n"
         "<i>Если всё отправлено — нажмите «Подтвердить» после ввода.</i>",
         reply_markup=cancel_staff_keyboard(),
         parse_mode="HTML",
@@ -298,20 +299,35 @@ async def receive_submit_content(message: Message, state: FSMContext) -> None:
     user_id, ok = await _get_user_id(message.from_user.id)
     if not ok:
         return
-    text_content = message.text or message.caption or ""
-    photo_id = None
-    if message.photo:
-        photo_id = message.photo[-1].file_id
-    await state.update_data(submitted_text=text_content, submitted_photo=photo_id)
+    text_content = (message.text or message.caption or "").strip()
+    photo_id = message.photo[-1].file_id if message.photo else None
+    video_id = message.video.file_id if message.video else None
+    if not text_content and not photo_id and not video_id:
+        await message.answer(
+            "⚠️ Отправьте текстовый отчёт, фото или видео.",
+            reply_markup=cancel_staff_keyboard(),
+        )
+        return
+
+    await state.update_data(
+        submitted_text=text_content,
+        submitted_photo=photo_id,
+        submitted_video=video_id,
+    )
     await state.set_state(SubmitQuest.confirm)
     data = await state.get_data()
     assignment_id = data["assignment_id"]
     preview = text_content[:200] + ("..." if len(text_content) > 200 else "")
-    photo_text = "\U0001f5bc\ufe0f Фото: прикреплено" if photo_id else ""
+    if photo_id:
+        media_text = "\U0001f5bc\ufe0f Фото: прикреплено"
+    elif video_id:
+        media_text = "🎥 Видео: прикреплено"
+    else:
+        media_text = ""
     reply = (
         f"\U0001f4e8 <b>Предпросмотр отчёта</b>\n\n"
-        f"{preview or '(без текста)'}\n"
-        f"{photo_text}\n\n"
+        f"{html.escape(preview) or '(без текста)'}\n"
+        f"{media_text}\n\n"
         "Всё верно?"
     )
     await message.answer(reply, reply_markup=submit_content_keyboard(assignment_id), parse_mode="HTML")
@@ -328,11 +344,17 @@ async def confirm_submit(callback: CallbackQuery, state: FSMContext, bot: Bot) -
 
     submitted_text = data.get("submitted_text") or ""
     submitted_photo = data.get("submitted_photo")
+    submitted_video = data.get("submitted_video")
     a = await queries.get_assignment_by_id(assignment_id)
     if not a:
         return await callback.answer("Назначение не найдено.", show_alert=True)
 
-    await queries.submit_quest(assignment_id, submitted_text, submitted_photo)
+    await queries.submit_quest(
+        assignment_id,
+        submitted_text,
+        submitted_photo,
+        submitted_video,
+    )
 
     # Уведомить Owner
     from bot.config import config
@@ -343,29 +365,37 @@ async def confirm_submit(callback: CallbackQuery, state: FSMContext, bot: Bot) -
     
     owner_text = (
         f"\U0001f4cb <b>Квест отправлен на проверку</b>\n\n"
-        f"\U0001f464 Staff: <b>{a['nickname']}</b>\n"
-        f"\U0001f4dd Квест: <b>{a['title']}</b>\n"
+        f"\U0001f464 Staff: <b>{html.escape(a['nickname'])}</b>\n"
+        f"\U0001f4dd Квест: <b>{html.escape(a['title'])}</b>\n"
         f"\U0001f381 Награда: <b>{reward}</b>"
     )
     if submitted_text:
-        owner_text += f"\n\n\U0001f4ac Отчёт:\n{submitted_text}"
+        owner_text += f"\n\n\U0001f4ac Отчёт:\n{html.escape(submitted_text)}"
         
+    if submitted_photo or submitted_video:
+        try:
+            if submitted_photo:
+                await bot.send_photo(
+                    config.owner_id,
+                    photo=submitted_photo,
+                    caption=f"📎 Доказательство к квесту #{assignment_id}",
+                )
+            else:
+                await bot.send_video(
+                    config.owner_id,
+                    video=submitted_video,
+                    caption=f"📎 Доказательство к квесту #{assignment_id}",
+                )
+        except Exception:
+            pass
+
     try:
-        if submitted_photo:
-            await bot.send_photo(
-                config.owner_id,
-                photo=submitted_photo,
-                caption=owner_text,
-                reply_markup=kb,
-                parse_mode="HTML"
-            )
-        else:
-            await bot.send_message(
-                config.owner_id,
-                owner_text,
-                reply_markup=kb,
-                parse_mode="HTML"
-            )
+        await bot.send_message(
+            config.owner_id,
+            owner_text,
+            reply_markup=kb,
+            parse_mode="HTML"
+        )
     except Exception:
         pass
 
@@ -420,6 +450,10 @@ async def history_detail(callback: CallbackQuery) -> None:
     )
     if reject_reason:
         text += f"\n\n\U0001f4ac Причина: {reject_reason}"
+    if a.get("submitted_photo"):
+        text += "\n\n📎 Доказательство: фото"
+    elif a.get("submitted_video"):
+        text += "\n\n📎 Доказательство: видео"
 
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     from aiogram.types import InlineKeyboardButton

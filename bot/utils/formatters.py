@@ -3,6 +3,7 @@
 """
 
 from datetime import datetime
+from html import escape
 
 
 def format_datetime(dt_str: str) -> str:
@@ -152,8 +153,16 @@ def format_request_for_owner(req: dict, user: dict) -> str:
     """Форматировать заявку для сообщения Owner."""
     # ТГ тег и ИД в скобках
     username = user.get("username")
-    user_display = f"@{username}" if username else user.get("nickname", "—")
+    user_display = f"@{escape(username)}" if username else escape(user.get("nickname", "—"))
     user_info = f"{user_display} ({user['telegram_id']})"
+    reason = escape(req["reason"])
+
+    media_type = req.get("media_type")
+    media_line = ""
+    if media_type == "photo":
+        media_line = "\n📎 <b>Доказательство:</b> фото"
+    elif media_type == "video":
+        media_line = "\n📎 <b>Доказательство:</b> видео"
 
     if req["currency_type"].startswith("tickets_"):
         key = req["currency_type"].replace("tickets_", "")
@@ -164,7 +173,8 @@ def format_request_for_owner(req: dict, user: dict) -> str:
             f"👤 <b>Пользователь:</b> {user_info}\n"
             f"🎫 <b>Тип тикета:</b> {emoji} {name}\n"
             f"🔢 <b>Количество:</b> {amount_val} шт.\n"
-            f"📝 <b>Причина:</b> {req['reason']}\n"
+            f"📝 <b>Причина:</b> {reason}"
+            f"{media_line}\n"
             f"🕐 <b>Время:</b> {format_datetime(req['created_at'])}"
         )
     else:
@@ -173,7 +183,8 @@ def format_request_for_owner(req: dict, user: dict) -> str:
             f"📨 <b>Новая заявка на баллы</b>\n\n"
             f"👤 <b>Пользователь:</b> {user_info}\n"
             f"⭐ <b>Количество:</b> {amount_str}\n"
-            f"📝 <b>Причина:</b> {req['reason']}\n"
+            f"📝 <b>Причина:</b> {reason}"
+            f"{media_line}\n"
             f"🕐 <b>Время:</b> {format_datetime(req['created_at'])}"
         )
 
@@ -195,11 +206,13 @@ def format_request_history_item(req: dict) -> str:
     }
     status = status_map.get(req["status"], req["status"])
     date_str = format_datetime(req["created_at"])
-    nickname = req.get("nickname", "—")
+    nickname = escape(req.get("nickname", "—"))
+    reason = escape(req["reason"])
 
+    media_mark = " 📎" if req.get("media_file_id") else ""
     return (
         f"#{req['id']} | {status}\n"
         f"👤 {nickname} · {label}\n"
-        f"📝 {req['reason']}\n"
+        f"📝 {reason}{media_mark}\n"
         f"📅 {date_str}"
     )

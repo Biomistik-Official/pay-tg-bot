@@ -131,7 +131,7 @@ class RejectRequest(StatesGroup):
 
 # Отправка квеста на проверку (Staff)
 class SubmitQuest(StatesGroup):
-    waiting_content = State()   # текст или фото (или оба)
+    waiting_content = State()   # текст, фото или видео
     confirm         = State()
 
 

@@ -2,6 +2,7 @@
 Управление квестами (Owner only).
 """
 import asyncio
+import html
 from aiogram import Router, F, Bot
 from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.context import FSMContext
@@ -50,7 +51,7 @@ def _reward_mode_label(mode: str) -> str:
 
 
 async def _edit_or_reply(callback: CallbackQuery, text: str, reply_markup=None) -> None:
-    if callback.message.photo:
+    if callback.message.photo or callback.message.video:
         try:
             await callback.message.delete()
         except Exception:
@@ -144,7 +145,6 @@ async def show_quest_detail(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("quest_stats:"))
 async def show_quest_stats(callback: CallbackQuery) -> None:
-    import html
     if not _is_owner(callback.from_user.id):
         return await callback.answer("No access.", show_alert=True)
     quest_id = int(callback.data.split(":")[1])
@@ -625,21 +625,26 @@ async def show_submissions(callback: CallbackQuery) -> None:
     reward = _reward_label(a["reward_type"], a["reward_amount"])
     text = (
         f"\U0001f4cb <b>Квест на проверке</b> [{offset + 1}/{len(submissions)}]\n\n"
-        f"\U0001f464 Пользователь: <b>{a['nickname']}</b> (@{a.get('username') or '—'})\n"
-        f"\U0001f4dd Квест: <b>{a['title']}</b>\n"
+        f"\U0001f464 Пользователь: <b>{html.escape(a['nickname'])}</b> (@{html.escape(a.get('username') or '—')})\n"
+        f"\U0001f4dd Квест: <b>{html.escape(a['title'])}</b>\n"
         f"\U0001f381 Награда: <b>{reward}</b>\n"
     )
     if a.get("submitted_text"):
-        text += f"\n\U0001f4ac Отчёт:\n{a['submitted_text']}"
+        text += f"\n\U0001f4ac Отчёт:\n{html.escape(a['submitted_text'])}"
     await _edit_or_reply(
         callback,
         text,
         reply_markup=quest_submission_review_keyboard(a["id"]),
     )
-    # Если есть фото — отправить отдельным сообщением
+    # Доказательство отправляется отдельным сообщением
     if a.get("submitted_photo"):
         try:
             await callback.message.answer_photo(a["submitted_photo"])
+        except Exception:
+            pass
+    elif a.get("submitted_video"):
+        try:
+            await callback.message.answer_video(a["submitted_video"])
         except Exception:
             pass
     await callback.answer()
@@ -713,7 +718,7 @@ async def approve_quest(callback: CallbackQuery, bot) -> None:
 
     text = f"\u2705 Квест одобрен! Награда начислена <b>{a['nickname']}</b>."
     try:
-        if callback.message.photo:
+        if callback.message.photo or callback.message.video:
             await callback.message.edit_caption(
                 caption=text,
                 reply_markup=admin_quests_keyboard(),
@@ -799,7 +804,7 @@ async def _do_reject(callback, bot, assignment_id: int, reason) -> None:
     text = f"\u274c Квест отклонён. Пользователь уведомлён."
     if callback.message:
         try:
-            if callback.message.photo:
+            if callback.message.photo or callback.message.video:
                 await callback.message.edit_caption(
                     caption=text,
                     reply_markup=admin_quests_keyboard(),

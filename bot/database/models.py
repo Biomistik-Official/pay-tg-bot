@@ -51,6 +51,8 @@ CREATE TABLE IF NOT EXISTS requests (
     currency_type   TEXT NOT NULL CHECK(currency_type IN ('points', 'tickets_platinum', 'tickets_gold', 'tickets_silver', 'tickets_bronze', 'tickets_support', 'tickets_help')),
     amount          REAL NOT NULL,
     reason          TEXT NOT NULL,
+    media_type      TEXT CHECK(media_type IN ('photo', 'video') OR media_type IS NULL),
+    media_file_id   TEXT,
     status          TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected')),
     created_at      TEXT DEFAULT (datetime('now')),
     reviewed_at     TEXT,
@@ -108,6 +110,7 @@ CREATE TABLE IF NOT EXISTS quest_assignments (
     submitted_at    TEXT,
     submitted_text  TEXT,
     submitted_photo TEXT,
+    submitted_video TEXT,
     reviewed_at     TEXT,
     reviewed_by     INTEGER,
     reject_reason   TEXT,
@@ -298,6 +301,8 @@ async def init_db() -> None:
                         currency_type   TEXT NOT NULL CHECK(currency_type IN ('points', 'tickets_platinum', 'tickets_gold', 'tickets_silver', 'tickets_bronze', 'tickets_support', 'tickets_help')),
                         amount          REAL NOT NULL,
                         reason          TEXT NOT NULL,
+                        media_type      TEXT CHECK(media_type IN ('photo', 'video') OR media_type IS NULL),
+                        media_file_id   TEXT,
                         status          TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected')),
                         created_at      TEXT DEFAULT (datetime('now')),
                         reviewed_at     TEXT,
@@ -305,9 +310,28 @@ async def init_db() -> None:
                         FOREIGN KEY (user_id) REFERENCES users(id)
                     )
                 """)
-                await db.execute("INSERT INTO requests SELECT * FROM requests_old")
+                await db.execute("""
+                    INSERT INTO requests (
+                        id, user_id, currency_type, amount, reason, status,
+                        created_at, reviewed_at, reviewed_by
+                    )
+                    SELECT id, user_id, currency_type, amount, reason, status,
+                           created_at, reviewed_at, reviewed_by
+                    FROM requests_old
+                """)
                 await db.execute("DROP TABLE requests_old")
                 await db.commit()
+
+        async with db.execute("PRAGMA table_info(requests)") as cursor:
+            request_columns = [row[1] for row in await cursor.fetchall()]
+
+        if "media_type" not in request_columns:
+            await db.execute("ALTER TABLE requests ADD COLUMN media_type TEXT")
+
+        if "media_file_id" not in request_columns:
+            await db.execute("ALTER TABLE requests ADD COLUMN media_file_id TEXT")
+
+        await db.commit()
 
         # Миграция: добавляем таблицы Staff, Quests, Quest Assignments если отсутствуют
         async with db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='staff'") as cur:
@@ -355,6 +379,7 @@ async def init_db() -> None:
                         submitted_at    TEXT,
                         submitted_text  TEXT,
                         submitted_photo TEXT,
+                        submitted_video TEXT,
                         reviewed_at     TEXT,
                         reviewed_by     INTEGER,
                         reject_reason   TEXT,
@@ -400,6 +425,9 @@ async def init_db() -> None:
         if "paid_amount" not in qa_columns:
             await db.execute("ALTER TABLE quest_assignments ADD COLUMN paid_amount REAL")
             await db.commit()
+        if "submitted_video" not in qa_columns:
+            await db.execute("ALTER TABLE quest_assignments ADD COLUMN submitted_video TEXT")
+            await db.commit()
 
         async with db.execute(
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='quest_assignments'"
@@ -418,6 +446,7 @@ async def init_db() -> None:
                     submitted_at    TEXT,
                     submitted_text  TEXT,
                     submitted_photo TEXT,
+                    submitted_video TEXT,
                     reviewed_at     TEXT,
                     reviewed_by     INTEGER,
                     reject_reason   TEXT,
@@ -430,11 +459,11 @@ async def init_db() -> None:
             await db.execute("""
                 INSERT INTO quest_assignments (
                     id, quest_id, user_id, status, taken_at, submitted_at,
-                    submitted_text, submitted_photo, reviewed_at, reviewed_by,
+                    submitted_text, submitted_photo, submitted_video, reviewed_at, reviewed_by,
                     reject_reason, applied_coefficient, paid_amount
                 )
                 SELECT id, quest_id, user_id, status, taken_at, submitted_at,
-                       submitted_text, submitted_photo, reviewed_at, reviewed_by,
+                       submitted_text, submitted_photo, submitted_video, reviewed_at, reviewed_by,
                        reject_reason, applied_coefficient, paid_amount
                 FROM quest_assignments_old
             """)

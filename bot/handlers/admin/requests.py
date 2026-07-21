@@ -17,7 +17,8 @@ from bot.keyboards.admin import (
 )
 from bot.states.forms import RejectRequest
 from bot.utils.formatters import format_request_for_owner, format_request_history_item, format_datetime
-from bot.utils.logger import log_admin_action
+from bot.utils.logger import logger, log_admin_action
+from bot.utils.request_media import send_request_media
 
 router = Router()
 PAGE_SIZE = 5
@@ -44,7 +45,7 @@ async def admin_requests_menu(callback: CallbackQuery) -> None:
 # Активные (ожидающие) заявки
 
 @router.callback_query(F.data == "pending_requests")
-async def show_pending_requests(callback: CallbackQuery) -> None:
+async def show_pending_requests(callback: CallbackQuery, bot: Bot) -> None:
     if not _is_owner(callback):
         await callback.answer("⛔ Доступ запрещён.", show_alert=True)
         return
@@ -72,11 +73,28 @@ async def show_pending_requests(callback: CallbackQuery) -> None:
         + format_request_for_owner(req, user_data)
     )
 
-    await callback.message.edit_text(
-        text,
-        reply_markup=request_action_keyboard(req["id"]),
-        parse_mode="HTML"
-    )
+    if req.get("media_file_id"):
+        await callback.message.edit_text(
+            "📨 <b>Активные заявки</b>\n\nЗаявка с доказательством отправлена ниже.",
+            reply_markup=admin_requests_keyboard(),
+            parse_mode="HTML"
+        )
+        try:
+            await send_request_media(bot, callback.from_user.id, req)
+        except Exception as e:
+            logger.error(f"Не удалось показать доказательство заявки #{req['id']}: {e}")
+        await bot.send_message(
+            callback.from_user.id,
+            text,
+            reply_markup=request_action_keyboard(req["id"]),
+            parse_mode="HTML"
+        )
+    else:
+        await callback.message.edit_text(
+            text,
+            reply_markup=request_action_keyboard(req["id"]),
+            parse_mode="HTML"
+        )
     await callback.answer()
 
 
@@ -174,6 +192,10 @@ async def approve_request(callback: CallbackQuery, bot: Bot) -> None:
             f"📨 <b>Следующая заявка ({len(remaining)} осталось)</b>\n\n"
             + format_request_for_owner(next_req, user_data)
         )
+        try:
+            await send_request_media(bot, callback.from_user.id, next_req)
+        except Exception as e:
+            logger.error(f"Не удалось показать доказательство заявки #{next_req['id']}: {e}")
         await bot.send_message(
             callback.from_user.id,
             text,
@@ -388,6 +410,10 @@ async def _do_reject_request(callback, bot: Bot, request_id: int, reason: str | 
             f"📨 <b>Следующая заявка ({len(remaining)} осталось)</b>\n\n"
             + format_request_for_owner(next_req, user_data)
         )
+        try:
+            await send_request_media(bot, callback.from_user.id, next_req)
+        except Exception as e:
+            logger.error(f"Не удалось показать доказательство заявки #{next_req['id']}: {e}")
         await bot.send_message(
             callback.from_user.id,
             text,
