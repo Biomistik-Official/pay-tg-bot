@@ -16,7 +16,7 @@ from bot.utils.logger import logger
 from bot.utils.sync import auto_sync_clubs
 
 # Импорт роутеров
-from bot.handlers import start, profile, currency, requests, history, shop, staff_quests
+from bot.handlers import start, profile, currency, requests, history, shop, staff_quests, treasury
 from bot.handlers.admin import panel, users, tickets, points, admin_currencies, requests as admin_requests, stats, shop_admin, staff, announcements, quests, club_activity as admin_club_activity, categories as admin_categories
 
 
@@ -60,6 +60,7 @@ async def main() -> None:
     dp.include_router(stats.router)
     dp.include_router(shop_admin.router)
     dp.include_router(shop.router)
+    dp.include_router(treasury.router)
     dp.include_router(staff.router)
     dp.include_router(admin_categories.router)
     dp.include_router(announcements.router)

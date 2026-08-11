@@ -41,6 +41,7 @@ Thumbs.db
 # Claude
 CLAUDE.md
 AGENTS.md
+config.toml
 
 # Test environment (local only)
 run-test.bat

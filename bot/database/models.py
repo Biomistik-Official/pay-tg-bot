@@ -173,6 +173,33 @@ CREATE TABLE IF NOT EXISTS staff_category_operation_items (
     FOREIGN KEY (operation_id) REFERENCES staff_category_operations(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
+
+CREATE TABLE IF NOT EXISTS treasury_balances (
+    currency_type   TEXT PRIMARY KEY,
+    amount          REAL NOT NULL DEFAULT 0 CHECK(amount >= 0),
+    updated_at      TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS treasury_transactions (
+    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+    operation_type          TEXT NOT NULL CHECK(operation_type IN ('donation', 'manual_deposit', 'expense')),
+    currency_type           TEXT NOT NULL,
+    amount                  REAL NOT NULL CHECK(amount > 0),
+    balance_before          REAL NOT NULL,
+    balance_after           REAL NOT NULL CHECK(balance_after >= 0),
+    related_user_id         INTEGER,
+    initiated_by_telegram_id INTEGER NOT NULL,
+    reason                  TEXT DEFAULT '',
+    request_key             TEXT UNIQUE,
+    created_at              TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (related_user_id) REFERENCES users(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_treasury_transactions_created_at
+ON treasury_transactions (created_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_treasury_transactions_user
+ON treasury_transactions (related_user_id, created_at DESC);
 """
 
 # Дефолтные категории Staff

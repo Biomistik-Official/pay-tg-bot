@@ -25,6 +25,7 @@ def main_menu_keyboard(is_owner: bool = False, is_staff: bool = False) -> Inline
         InlineKeyboardButton(text="⭐ Баллы",   callback_data="points_menu"),
     )
     builder.row(InlineKeyboardButton(text="🛒 Магазин", callback_data="shop_main"))
+    builder.row(InlineKeyboardButton(text="🏦 Казна", callback_data="treasury"))
     if is_staff and not is_owner:
         builder.row(
             InlineKeyboardButton(text="📋 Квесты", callback_data="staff_quests_menu"),

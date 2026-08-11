@@ -152,6 +152,17 @@ class ManageAdminCurrency(StatesGroup):
     waiting_reason = State()
 
 
+class TreasuryDonation(StatesGroup):
+    waiting_amount = State()
+    confirm = State()
+
+
+class TreasuryOwnerOperation(StatesGroup):
+    waiting_amount = State()
+    waiting_reason = State()
+    confirm = State()
+
+
 # Категории Staff — создание / редактирование
 class CategoryCreate(StatesGroup):
     waiting_name        = State()

@@ -4,8 +4,18 @@
 
 from typing import Optional, Any
 from datetime import datetime, date, timezone
+from math import isfinite
 import aiosqlite
 from bot.database.models import get_db
+from bot.utils.treasury import DONATION_CURRENCIES, TREASURY_CURRENCIES
+
+
+class TreasuryInsufficientFundsError(ValueError):
+    pass
+
+
+class TreasuryUserNotFoundError(ValueError):
+    pass
 
 
 #  USERS
@@ -1506,4 +1516,258 @@ async def get_staff_category_info(user_id: int) -> Optional[dict]:
         ) as cursor:
             row = await cursor.fetchone()
             return dict(row) if row else None
+
+
+# Казна клуба
+
+def _validate_treasury_amount(currency_type: str, amount: float) -> None:
+    if currency_type not in TREASURY_CURRENCIES:
+        raise ValueError("Неподдерживаемый тип средств.")
+    if not isfinite(float(amount)) or amount <= 0:
+        raise ValueError("Сумма должна быть больше нуля.")
+    if TREASURY_CURRENCIES[currency_type]["integer"] and not float(amount).is_integer():
+        raise ValueError("Для этого типа средств нужно целое число.")
+
+
+async def get_treasury_snapshot() -> dict:
+    """Получить все балансы казны и дату последней операции."""
+    async with get_db() as db:
+        async with db.execute(
+            "SELECT currency_type, amount FROM treasury_balances"
+        ) as cursor:
+            balances = {row[0]: row[1] for row in await cursor.fetchall()}
+        async with db.execute(
+            "SELECT MAX(created_at) FROM treasury_transactions"
+        ) as cursor:
+            row = await cursor.fetchone()
+            last_changed = row[0] if row else None
+    return {"balances": balances, "last_changed": last_changed}
+
+
+async def get_treasury_history(limit: int = 8, offset: int = 0) -> list[dict]:
+    """Получить историю казны."""
+    async with get_db() as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            """SELECT tt.*,
+                      ru.nickname AS related_user_nickname,
+                      ru.telegram_id AS related_user_telegram_id,
+                      iu.nickname AS initiator_nickname
+               FROM treasury_transactions tt
+               LEFT JOIN users ru ON ru.id = tt.related_user_id
+               LEFT JOIN users iu ON iu.telegram_id = tt.initiated_by_telegram_id
+               ORDER BY tt.id DESC
+               LIMIT ? OFFSET ?""",
+            (limit, offset),
+        ) as cursor:
+            return [dict(row) for row in await cursor.fetchall()]
+
+
+async def count_treasury_history() -> int:
+    """Получить число операций казны."""
+    async with get_db() as db:
+        async with db.execute("SELECT COUNT(*) FROM treasury_transactions") as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else 0
+
+
+async def donate_to_treasury(
+    telegram_id: int,
+    currency_type: str,
+    amount: float,
+    request_key: str,
+) -> dict:
+    """Атомарно списать средства у пользователя и зачислить их в казну."""
+    if currency_type not in DONATION_CURRENCIES:
+        raise ValueError("Этот тип средств нельзя пожертвовать.")
+    if not request_key:
+        raise ValueError("Не задан ключ операции.")
+    _validate_treasury_amount(currency_type, amount)
+
+    async with get_db() as db:
+        db.row_factory = aiosqlite.Row
+        await db.execute("PRAGMA foreign_keys = ON")
+        await db.execute("BEGIN IMMEDIATE")
+        try:
+            async with db.execute(
+                "SELECT * FROM treasury_transactions WHERE request_key = ?",
+                (request_key,),
+            ) as cursor:
+                existing = await cursor.fetchone()
+            if existing:
+                result = dict(existing)
+                result["duplicate"] = True
+                await db.commit()
+                return result
+
+            async with db.execute(
+                "SELECT id, nickname, is_blocked, " + currency_type + " AS balance "
+                "FROM users WHERE telegram_id = ?",
+                (telegram_id,),
+            ) as cursor:
+                user = await cursor.fetchone()
+            if not user or user["is_blocked"]:
+                raise TreasuryUserNotFoundError("Пользователь не найден или заблокирован.")
+            if float(user["balance"] or 0) < float(amount):
+                raise TreasuryInsufficientFundsError("Недостаточно средств для пожертвования.")
+
+            cursor = await db.execute(
+                f"""UPDATE users
+                    SET {currency_type} = {currency_type} - ?
+                    WHERE id = ? AND {currency_type} >= ?""",
+                (amount, user["id"], amount),
+            )
+            if cursor.rowcount != 1:
+                raise TreasuryInsufficientFundsError("Недостаточно средств для пожертвования.")
+
+            await db.execute(
+                "INSERT OR IGNORE INTO treasury_balances (currency_type, amount) VALUES (?, 0)",
+                (currency_type,),
+            )
+            async with db.execute(
+                "SELECT amount FROM treasury_balances WHERE currency_type = ?",
+                (currency_type,),
+            ) as cursor:
+                balance_before = (await cursor.fetchone())[0]
+            balance_after = balance_before + amount
+            if not isfinite(float(balance_after)):
+                raise ValueError("Итоговый баланс выше допустимого.")
+            await db.execute(
+                """UPDATE treasury_balances
+                   SET amount = ?, updated_at = datetime('now')
+                   WHERE currency_type = ?""",
+                (balance_after, currency_type),
+            )
+            await db.execute(
+                """INSERT INTO transactions
+                   (user_id, currency_type, operation, amount, reason, performed_by)
+                   VALUES (?, ?, 'subtract', ?, ?, ?)""",
+                (
+                    user["id"],
+                    currency_type,
+                    amount,
+                    "Пожертвование в казну клуба",
+                    telegram_id,
+                ),
+            )
+            cursor = await db.execute(
+                """INSERT INTO treasury_transactions
+                   (operation_type, currency_type, amount, balance_before,
+                    balance_after, related_user_id, initiated_by_telegram_id,
+                    reason, request_key)
+                   VALUES ('donation', ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    currency_type,
+                    amount,
+                    balance_before,
+                    balance_after,
+                    user["id"],
+                    telegram_id,
+                    f"Пожертвование от {user['nickname']}",
+                    request_key,
+                ),
+            )
+            transaction_id = cursor.lastrowid
+            await db.commit()
+            return {
+                "id": transaction_id,
+                "operation_type": "donation",
+                "currency_type": currency_type,
+                "amount": amount,
+                "balance_before": balance_before,
+                "balance_after": balance_after,
+                "duplicate": False,
+            }
+        except Exception:
+            await db.rollback()
+            raise
+
+
+async def adjust_treasury_balance(
+    operation_type: str,
+    currency_type: str,
+    amount: float,
+    initiated_by_telegram_id: int,
+    reason: str,
+    request_key: str,
+) -> dict:
+    """Атомарно пополнить казну или списать из неё средства."""
+    if operation_type not in {"manual_deposit", "expense"}:
+        raise ValueError("Неверный тип операции казны.")
+    if not request_key:
+        raise ValueError("Не задан ключ операции.")
+    if operation_type == "expense" and not reason.strip():
+        raise ValueError("Причина списания обязательна.")
+    _validate_treasury_amount(currency_type, amount)
+
+    async with get_db() as db:
+        db.row_factory = aiosqlite.Row
+        await db.execute("BEGIN IMMEDIATE")
+        try:
+            async with db.execute(
+                "SELECT * FROM treasury_transactions WHERE request_key = ?",
+                (request_key,),
+            ) as cursor:
+                existing = await cursor.fetchone()
+            if existing:
+                result = dict(existing)
+                result["duplicate"] = True
+                await db.commit()
+                return result
+
+            await db.execute(
+                "INSERT OR IGNORE INTO treasury_balances (currency_type, amount) VALUES (?, 0)",
+                (currency_type,),
+            )
+            async with db.execute(
+                "SELECT amount FROM treasury_balances WHERE currency_type = ?",
+                (currency_type,),
+            ) as cursor:
+                balance_before = (await cursor.fetchone())[0]
+
+            if operation_type == "expense":
+                if float(balance_before) < float(amount):
+                    raise TreasuryInsufficientFundsError("В казне недостаточно средств.")
+                balance_after = balance_before - amount
+            else:
+                balance_after = balance_before + amount
+            if not isfinite(float(balance_after)):
+                raise ValueError("Итоговый баланс выше допустимого.")
+
+            await db.execute(
+                """UPDATE treasury_balances
+                   SET amount = ?, updated_at = datetime('now')
+                   WHERE currency_type = ?""",
+                (balance_after, currency_type),
+            )
+            cursor = await db.execute(
+                """INSERT INTO treasury_transactions
+                   (operation_type, currency_type, amount, balance_before,
+                    balance_after, initiated_by_telegram_id, reason, request_key)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    operation_type,
+                    currency_type,
+                    amount,
+                    balance_before,
+                    balance_after,
+                    initiated_by_telegram_id,
+                    reason,
+                    request_key,
+                ),
+            )
+            transaction_id = cursor.lastrowid
+            await db.commit()
+            return {
+                "id": transaction_id,
+                "operation_type": operation_type,
+                "currency_type": currency_type,
+                "amount": amount,
+                "balance_before": balance_before,
+                "balance_after": balance_after,
+                "duplicate": False,
+            }
+        except Exception:
+            await db.rollback()
+            raise
 
