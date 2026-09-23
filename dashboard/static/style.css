@@ -269,23 +269,6 @@ tbody tr.no-hover:hover { background: transparent; cursor: default; }
 .pager button:disabled { opacity: 0.4; cursor: default; }
 .pager .info { padding: 8px 10px; color: var(--muted); font-size: 12px; }
 
-/* ── Quests ── */
-.quests-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 14px;
-}
-.quest-card {
-  background: linear-gradient(160deg, var(--panel), var(--bg-2));
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 15px 16px;
-}
-.quest-card h3 { margin: 0 0 6px; font-size: 15px; }
-.quest-card .meta { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
-.quest-card .stats { display: flex; gap: 14px; margin-top: 10px; font-size: 12px; flex-wrap: wrap; }
-.quest-card .stats span b { color: var(--text); }
-
 /* ── Logs ── */
 .log-view {
   background: #0e0908;
@@ -404,7 +387,6 @@ tbody tr.no-hover:hover { background: transparent; cursor: default; }
   .counter { margin-left: 0; width: 100%; }
 
   .table-wrap { max-height: none; }
-  .quests-list { grid-template-columns: 1fr; }
   .log-view { height: 60vh; }
 
   .modal { padding: 18px 16px; border-radius: 14px; }

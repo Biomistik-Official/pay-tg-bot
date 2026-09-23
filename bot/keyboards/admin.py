@@ -22,7 +22,7 @@ def admin_panel_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="📬 Объявления", callback_data="admin_announcements"),
     )
     builder.row(
-        InlineKeyboardButton(text="📋 Управление квестами", callback_data="admin_quests"),
+        InlineKeyboardButton(text="🏦 Управление казной", callback_data="treasury"),
         InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats"),
     )
     builder.row(InlineKeyboardButton(text="🎮 Активность клубов", callback_data="ca_menu"))
@@ -41,7 +41,7 @@ def admin_back_keyboard() -> InlineKeyboardMarkup:
 def admin_users_keyboard(users: list[dict], offset: int, total: int, page_size: int = 10) -> InlineKeyboardMarkup:
     """Меню управления пользователями с алфавитным списком."""
     builder = InlineKeyboardBuilder()
-    
+
     # Добавляем кнопки для каждого пользователя
     for u in users:
         nick = u["nickname"]
@@ -57,7 +57,7 @@ def admin_users_keyboard(users: list[dict], offset: int, total: int, page_size: 
         )
         btn_text = f"👤 {nick} ({total_tickets}🎫 | {u['points']}⭐)"
         builder.row(InlineKeyboardButton(text=btn_text, callback_data=f"view_user:{u['telegram_id']}"))
-        
+
     # Кнопки навигации по страницам пользователей
     nav_row = []
     if offset > 0:
@@ -72,13 +72,13 @@ def admin_users_keyboard(users: list[dict], offset: int, total: int, page_size: 
         ))
     if nav_row:
         builder.row(*nav_row)
-        
+
     # Кнопки поиска
     builder.row(
         InlineKeyboardButton(text="🔍 Поиск по нику", callback_data="search_user_nick"),
         InlineKeyboardButton(text="🔍 Поиск по ID", callback_data="search_user_id")
     )
-    
+
     # Назад в админку
     builder.row(InlineKeyboardButton(text="⬅️ В админ-панель", callback_data="admin_panel"))
     return builder.as_markup()
@@ -133,7 +133,6 @@ def manage_points_keyboard() -> InlineKeyboardMarkup:
 def manage_currency_from_profile_keyboard(telegram_id: int, currency: str) -> InlineKeyboardMarkup:
     """Управление валютой из профиля пользователя."""
     builder = InlineKeyboardBuilder()
-    emoji = "🎫" if currency == "tickets" else "⭐"
     label = "тикеты" if currency == "tickets" else "баллы"
 
     builder.row(InlineKeyboardButton(
@@ -145,7 +144,7 @@ def manage_currency_from_profile_keyboard(telegram_id: int, currency: str) -> In
         callback_data=f"take_{currency}_from:{telegram_id}"
     ))
     builder.row(InlineKeyboardButton(
-        text=f"🔄 Установить баланс",
+        text="🔄 Установить баланс",
         callback_data=f"set_{currency}_for:{telegram_id}"
     ))
     builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"view_user:{telegram_id}"))
@@ -156,9 +155,9 @@ def manage_admin_currency_keyboard(telegram_id: int, currency: str) -> InlineKey
     """Управление админ-валютой (рубли / звёзды) из профиля пользователя."""
     builder = InlineKeyboardBuilder()
     if currency == "rubles":
-        emoji, label = "💰", "рубли"
+        label = "рубли"
     else:
-        emoji, label = "🌟", "звёзды"
+        label = "звёзды"
 
     builder.row(InlineKeyboardButton(
         text=f"➕ Выдать {label}",
@@ -169,7 +168,7 @@ def manage_admin_currency_keyboard(telegram_id: int, currency: str) -> InlineKey
         callback_data=f"take_{currency}_from:{telegram_id}"
     ))
     builder.row(InlineKeyboardButton(
-        text=f"🔄 Установить баланс",
+        text="🔄 Установить баланс",
         callback_data=f"set_{currency}_for:{telegram_id}"
     ))
     builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"view_user:{telegram_id}"))
@@ -295,7 +294,7 @@ def ticket_type_admin_keyboard(action: str, telegram_id: int = None) -> InlineKe
             text=f"{emoji} {name}",
             callback_data=f"admin_ticket_type:{action}:{key}:{tg_id_str}"
         ))
-    
+
     # Кнопка отмены
     builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_admin_form"))
     return builder.as_markup()
@@ -436,253 +435,46 @@ def admin_shop_roulette_cost_keyboard(settings: dict) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+
 # Управление Staff
 
 def admin_staff_keyboard() -> InlineKeyboardMarkup:
-    """Меню управления Staff."""
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="➕ Добавить Staff", callback_data="staff_add"))
-    builder.row(InlineKeyboardButton(text="📜 Список Staff",   callback_data="staff_list"))
-    builder.row(
-        InlineKeyboardButton(text="🎖 Роли Staff",         callback_data="admin_ranks"),
-        InlineKeyboardButton(text="⚙️ Коэффициенты Staff", callback_data="admin_coefs"),
-    )
-    builder.row(
-        InlineKeyboardButton(text="📂 Категории Staff",    callback_data="admin_cats"),
-        InlineKeyboardButton(text="⚙️ Коэф. категорий",    callback_data="admin_cat_coefs"),
-    )
+    builder.row(InlineKeyboardButton(text="📜 Список Staff", callback_data="staff_list"))
     builder.row(InlineKeyboardButton(text="⬅️ Админ-панель", callback_data="admin_panel"))
     return builder.as_markup()
 
 
 def staff_list_keyboard(staff_list: list[dict]) -> InlineKeyboardMarkup:
-    """Список Staff с возможностью просмотра каждого."""
-    from bot.utils.ranks import rank_emoji, DEFAULT_RANK
     builder = InlineKeyboardBuilder()
     for member in staff_list:
         nick = member["nickname"]
-        if len(nick) > 15:
-            nick = nick[:12] + "..."
-        r = member.get("rank") or DEFAULT_RANK
+        if len(nick) > 20:
+            nick = nick[:17] + "..."
         builder.row(InlineKeyboardButton(
-            text=f"{rank_emoji(r)} {nick}",
-            callback_data=f"staff_view:{member['telegram_id']}"
+            text=f"🛠 {nick}",
+            callback_data=f"staff_view:{member['telegram_id']}",
         ))
     builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_staff"))
     return builder.as_markup()
 
 
 def staff_member_keyboard(telegram_id: int) -> InlineKeyboardMarkup:
-    """Действия с конкретным Staff."""
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="📊 Статистика", callback_data=f"staff_stats:{telegram_id}"))
-    builder.row(InlineKeyboardButton(text="🎖 Назначить/изменить ранг", callback_data=f"staff_set_rank:{telegram_id}"))
-    builder.row(InlineKeyboardButton(text="🕓 История ранга", callback_data=f"staff_rank_history:{telegram_id}"))
-    builder.row(InlineKeyboardButton(text="❌ Снять роль Staff", callback_data=f"staff_remove:{telegram_id}"))
+    builder.row(InlineKeyboardButton(
+        text="❌ Снять роль Staff", callback_data=f"staff_remove:{telegram_id}"
+    ))
     builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="staff_list"))
     return builder.as_markup()
 
 
-# Управление рангами Staff (Owner only)
-
-def admin_ranks_menu_keyboard() -> InlineKeyboardMarkup:
-    """Меню «Управление ролями Staff»."""
-    from bot.utils.ranks import RANK_ORDER, RANK_META
-    builder = InlineKeyboardBuilder()
-    for rank in RANK_ORDER:
-        meta = RANK_META[rank]
-        builder.row(InlineKeyboardButton(
-            text=f"{meta['emoji']} {meta['name']} — список",
-            callback_data=f"admin_ranks_list:{rank}",
-        ))
-    builder.row(InlineKeyboardButton(text="👥 Все Staff", callback_data="admin_ranks_list:all"))
-    builder.row(InlineKeyboardButton(text="⬅️ Управление Staff", callback_data="admin_staff"))
-    return builder.as_markup()
-
-
-def admin_ranks_list_keyboard(staff_list: list[dict], filter_rank: str) -> InlineKeyboardMarkup:
-    """Список Staff (опционально с фильтром по рангу) для назначения/изменения ранга."""
-    from bot.utils.ranks import rank_emoji, DEFAULT_RANK
-    builder = InlineKeyboardBuilder()
-    for member in staff_list:
-        r = member.get("rank") or DEFAULT_RANK
-        nick = member["nickname"]
-        if len(nick) > 15:
-            nick = nick[:12] + "..."
-        builder.row(InlineKeyboardButton(
-            text=f"{rank_emoji(r)} {nick}",
-            callback_data=f"staff_set_rank:{member['telegram_id']}"
-        ))
-    builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_ranks"))
-    return builder.as_markup()
-
-
-def rank_pick_keyboard(telegram_id: int, current: str) -> InlineKeyboardMarkup:
-    """Выбор нового ранга для Staff. Отмечает текущий ранг ✅."""
-    from bot.utils.ranks import RANK_ORDER, RANK_META
-    builder = InlineKeyboardBuilder()
-    for rank in RANK_ORDER:
-        meta = RANK_META[rank]
-        mark = "✅ " if rank == current else ""
-        builder.row(InlineKeyboardButton(
-            text=f"{mark}{meta['emoji']} {meta['name']}",
-            callback_data=f"staff_rank_apply:{telegram_id}:{rank}"
-        ))
-    builder.row(InlineKeyboardButton(text="⬅️ К профилю Staff", callback_data=f"staff_view:{telegram_id}"))
-    return builder.as_markup()
-
-
-def rank_history_keyboard(telegram_id: int) -> InlineKeyboardMarkup:
-    """Кнопка назад из истории ранга."""
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="⬅️ К профилю Staff", callback_data=f"staff_view:{telegram_id}"))
-    return builder.as_markup()
-
-
-# Коэффициенты рангов Staff (Owner only)
-
-def admin_coefs_menu_keyboard() -> InlineKeyboardMarkup:
-    """Меню выбора вида коэффициентов рангов."""
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(
-        text="📋 Коэф. квестов",
-        callback_data="admin_coefs_quest",
-    ))
-    builder.row(InlineKeyboardButton(
-        text="📂 Коэф. категорий",
-        callback_data="admin_coefs_cat",
-    ))
-    builder.row(InlineKeyboardButton(text="⬅️ Управление Staff", callback_data="admin_staff"))
-    return builder.as_markup()
-
-
-def admin_coefs_keyboard(coefficients: dict, kind: str = "quest") -> InlineKeyboardMarkup:
-    """
-    Клавиатура рангов с текущим значением одного из двух коэффициентов.
-    kind: 'quest' (базовый) или 'cat' (категорийный).
-    """
-    from bot.utils.ranks import RANK_ORDER, RANK_META
-    default_key = "default_coef" if kind == "quest" else "default_cat_coef"
-    edit_prefix = "admin_coef_edit" if kind == "quest" else "admin_catcoef_edit"
-    builder = InlineKeyboardBuilder()
-    for rank in RANK_ORDER:
-        meta = RANK_META[rank]
-        coef = coefficients.get(rank, meta[default_key])
-        builder.row(InlineKeyboardButton(
-            text=f"{meta['emoji']} {meta['name']} — ×{coef:g}",
-            callback_data=f"{edit_prefix}:{rank}",
-        ))
-    builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_coefs"))
-    return builder.as_markup()
-
-
 def staff_remove_confirm_keyboard(telegram_id: int) -> InlineKeyboardMarkup:
-    """Подтверждение снятия роли Staff."""
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(text="✅ Да, снять", callback_data=f"staff_remove_confirm:{telegram_id}"),
         InlineKeyboardButton(text="❌ Отмена", callback_data=f"staff_view:{telegram_id}"),
     )
-    return builder.as_markup()
-
-
-# Квесты (Admin)
-
-def admin_quests_keyboard() -> InlineKeyboardMarkup:
-    """Меню управления квестами."""
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="➕ Создать квест", callback_data="quest_create"))
-    builder.row(InlineKeyboardButton(text="📋 Список квестов", callback_data="quest_list"))
-    builder.row(InlineKeyboardButton(text="⏳ На проверке", callback_data="quest_submissions"))
-    builder.row(InlineKeyboardButton(text="⬅️ Админ-панель", callback_data="admin_panel"))
-    return builder.as_markup()
-
-
-def quest_list_admin_keyboard(quests: list[dict]) -> InlineKeyboardMarkup:
-    """Список квестов для Owner."""
-    builder = InlineKeyboardBuilder()
-    for q in quests:
-        status_icon = "🟢" if q["status"] == "active" else "🔴"
-        title = q["title"][:20] + "..." if len(q["title"]) > 20 else q["title"]
-        builder.row(InlineKeyboardButton(
-            text=f"{status_icon} {title}",
-            callback_data=f"quest_detail:{q['id']}"
-        ))
-    builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_quests"))
-    return builder.as_markup()
-
-
-def quest_detail_admin_keyboard(quest_id: int, is_active: bool) -> InlineKeyboardMarkup:
-    """Детали квеста + действия Owner."""
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="✏️ Редактировать", callback_data=f"quest_edit:{quest_id}"))
-    if is_active:
-        builder.row(InlineKeyboardButton(text="🔒 Закрыть квест", callback_data=f"quest_close:{quest_id}"))
-    builder.row(InlineKeyboardButton(text="📊 Статистика", callback_data=f"quest_stats:{quest_id}"))
-    builder.row(InlineKeyboardButton(text="🗑️ Удалить", callback_data=f"quest_delete:{quest_id}"))
-    builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="quest_list"))
-    return builder.as_markup()
-
-
-def quest_edit_field_keyboard(quest_id: int) -> InlineKeyboardMarkup:
-    """Выбор поля для редактирования квеста."""
-    builder = InlineKeyboardBuilder()
-    fields = [
-        ("title",          "📝 Название"),
-        ("description",    "📄 Описание"),
-        ("reward_amount",  "🎁 Награда"),
-        ("max_executors",  "👥 Максимум исполнителей"),
-        ("deadline",       "📅 Срок"),
-    ]
-    for key, label in fields:
-        builder.row(InlineKeyboardButton(
-            text=label,
-            callback_data=f"quest_edit_field:{quest_id}:{key}"
-        ))
-    builder.row(InlineKeyboardButton(
-        text="🎯 Тип награды (переключить)",
-        callback_data=f"quest_toggle_mode:{quest_id}"
-    ))
-    builder.row(InlineKeyboardButton(
-        text="🔁 Повторное выполнение (переключить)",
-        callback_data=f"quest_toggle_repeat:{quest_id}"
-    ))
-    builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"quest_detail:{quest_id}"))
-    return builder.as_markup()
-
-
-def quest_delete_confirm_keyboard(quest_id: int) -> InlineKeyboardMarkup:
-    """Подтверждение удаления квеста."""
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(text="✅ Да, удалить", callback_data=f"quest_delete_confirm:{quest_id}"),
-        InlineKeyboardButton(text="❌ Отмена", callback_data=f"quest_detail:{quest_id}"),
-    )
-    return builder.as_markup()
-
-
-def quest_submission_review_keyboard(assignment_id: int) -> InlineKeyboardMarkup:
-    """Кнопки проверки отправленного квеста."""
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(text="✅ Одобрить", callback_data=f"quest_approve:{assignment_id}"),
-        InlineKeyboardButton(text="❌ Отклонить", callback_data=f"quest_reject:{assignment_id}"),
-    )
-    builder.row(InlineKeyboardButton(text="⬅️ К списку", callback_data="quest_submissions"))
-    return builder.as_markup()
-
-
-def submissions_nav_keyboard(offset: int, total: int) -> InlineKeyboardMarkup:
-    """Навигация по заявкам на проверку."""
-    builder = InlineKeyboardBuilder()
-    nav = []
-    if offset > 0:
-        nav.append(InlineKeyboardButton(text="◀️ Назад", callback_data=f"quest_submissions:{offset - 1}"))
-    if offset + 1 < total:
-        nav.append(InlineKeyboardButton(text="▶️ Вперёд", callback_data=f"quest_submissions:{offset + 1}"))
-    if nav:
-        builder.row(*nav)
-    builder.row(InlineKeyboardButton(text="⬅️ В квесты", callback_data="admin_quests"))
     return builder.as_markup()
 
 

@@ -23,7 +23,6 @@
       <button class="nav-btn" data-tab="transactions">Транзакции</button>
       <button class="nav-btn" data-tab="requests">Заявки</button>
       <button class="nav-btn" data-tab="orders">Заказы</button>
-      <button class="nav-btn" data-tab="quests">Квесты</button>
       <button class="nav-btn" data-tab="logs">Логи</button>
     </nav>
     <form class="logout" method="post" action="/logout">
@@ -167,19 +166,6 @@
         </table>
       </div>
       <div class="pager" id="ord-pager"></div>
-    </section>
-
-    <!-- Quests -->
-    <section class="tab" id="tab-quests">
-      <h1>Квесты</h1>
-      <div class="toolbar">
-        <select id="quest-status">
-          <option value="">Все</option>
-          <option value="active">Активные</option>
-          <option value="closed">Закрытые</option>
-        </select>
-      </div>
-      <div class="quests-list" id="quests-list"></div>
     </section>
 
     <!-- Logs -->

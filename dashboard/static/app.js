@@ -77,7 +77,6 @@ function onTabChange(name) {
   if (name === "transactions") loadTx();
   if (name === "requests") loadReq();
   if (name === "orders") loadOrd();
-  if (name === "quests") loadQuests();
   if (name === "logs") initLogs();
 }
 
@@ -94,7 +93,7 @@ async function loadOverview() {
     ["Ожидают заявок", ov.requests.pending, `${ov.orders.pending} заказов`],
     ["Points в системе", fmt(Math.round(ov.points.total)),
       `+${fmt(Math.round(ov.points.added_today))} сегодня`],
-    ["Активных квестов", ov.quests.active, `${ov.staff.active} стафф`],
+    ["Staff", ov.staff.active, `${fmt(Math.round(ov.treasury.points))} points в казнах`],
   ];
   $("#ov-cards").innerHTML = cards.map(([l,v,s]) => `
     <div class="card">
@@ -406,28 +405,6 @@ async function loadOrd() {
   renderPager("#ord-pager", ordState, loadOrd);
 }
 $("#ord-status").addEventListener("change", () => { ordState.offset = 0; loadOrd(); });
-
-// --- Quests ---
-async function loadQuests() {
-  const st = $("#quest-status").value;
-  const rows = await api(`/api/quests?status=${st}`);
-  $("#quests-list").innerHTML = rows.map(q => `
-    <div class="quest-card">
-      <h3>${escapeHtml(q.title)}</h3>
-      <div class="meta">
-        ${statusTag(q.status)} · Награда: <b>${fmt(q.reward_amount)}</b> ${escapeHtml(q.reward_type)}
-        ${q.deadline ? `· до ${escapeHtml(q.deadline)}` : ""}
-      </div>
-      <div class="dim" style="font-size:13px">${escapeHtml(q.description).slice(0, 240)}${q.description.length > 240 ? "…" : ""}</div>
-      <div class="stats">
-        <span>Взято: <b>${q.taken}</b> / ${q.max_executors}</span>
-        <span>Ожидают: <b>${q.pending}</b></span>
-        <span>Одобрено: <b>${q.approved}</b></span>
-      </div>
-    </div>
-  `).join("") || `<div class="dim">Нет квестов</div>`;
-}
-$("#quest-status").addEventListener("change", loadQuests);
 
 // --- Logs ---
 let logSource = null;

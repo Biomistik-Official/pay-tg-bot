@@ -87,52 +87,9 @@ class ManageStaff(StatesGroup):
     waiting_user_search = State()   # поиск по нику/ID для добавления
 
 
-class RemoveStaff(StatesGroup):
-    confirm = State()               # подтверждение удаления
-
-
-# Изменение коэффициента награды ранга (Admin)
-class SetRankCoefficient(StatesGroup):
-    waiting_value = State()         # ввод нового множителя для ранга
-
-
-# Изменение категорийного коэффициента ранга (Admin)
-class SetRankCategoryCoefficient(StatesGroup):
-    waiting_value = State()
-
-
-# Создание квеста (Admin)
-class CreateQuest(StatesGroup):
-    waiting_title        = State()
-    waiting_description  = State()
-    waiting_reward_type  = State()
-    waiting_reward_amount = State()
-    waiting_reward_mode  = State()   # обычная награда / награда с коэффициентом
-    waiting_max_executors = State()
-    waiting_repeat_mode  = State()
-    waiting_deadline     = State()
-
-
-# Редактирование квеста (Admin)
-class EditQuest(StatesGroup):
-    waiting_field     = State()   # выбор поля для редактирования
-    waiting_new_value = State()   # новое значение
-
-
-# Отклонение квеста (Admin — причина)
-class RejectQuest(StatesGroup):
-    waiting_reason = State()
-
-
 # Отклонение заявки на тикеты/баллы (Admin — причина)
 class RejectRequest(StatesGroup):
     waiting_reason = State()
-
-
-# Отправка квеста на проверку (Staff)
-class SubmitQuest(StatesGroup):
-    waiting_content = State()   # текст, фото или видео
-    confirm         = State()
 
 
 # Объявления (Admin)
@@ -152,58 +109,41 @@ class ManageAdminCurrency(StatesGroup):
     waiting_reason = State()
 
 
-class TreasuryDonation(StatesGroup):
+
+
+class TreasuryTopUp(StatesGroup):
     waiting_amount = State()
+    waiting_manual_amount = State()
+    waiting_reason = State()
     confirm = State()
 
 
-class TreasuryOwnerOperation(StatesGroup):
+class TreasuryDonation(StatesGroup):
     waiting_amount = State()
     waiting_reason = State()
     confirm = State()
 
 
-# Категории Staff — создание / редактирование
-class CategoryCreate(StatesGroup):
-    waiting_name        = State()
-    waiting_description = State()
-    waiting_coefficient = State()
-    waiting_comment     = State()
+class TreasurySpend(StatesGroup):
+    waiting_amount = State()
+    waiting_reason = State()
+    confirm = State()
 
 
-class CategoryEdit(StatesGroup):
-    waiting_value = State()
+class TreasuryDistribution(StatesGroup):
+    waiting_amount = State()
+    confirm = State()
 
 
-class CategoryAddMember(StatesGroup):
+class TreasuryPercentages(StatesGroup):
+    waiting_values = State()
+
+
+class TreasuryMemberAdd(StatesGroup):
     waiting_search = State()
 
 
-# Выдача зарплаты по категории
-class CategorySalary(StatesGroup):
-    waiting_base    = State()
-    waiting_confirm = State()
-
-
-# Зарплата одному сотруднику
-class CategorySalarySingle(StatesGroup):
-    waiting_base    = State()
-    waiting_confirm = State()
-
-
-# Штраф
-class CategoryPenalty(StatesGroup):
-    waiting_amount  = State()
-    waiting_confirm = State()
-
-
-# Рассылка сообщения категории
-class CategoryBroadcast(StatesGroup):
-    waiting_text    = State()
-    waiting_confirm = State()
-
-
-# Изменение коэффициента категории из общего меню
-class CategoryCoefEdit(StatesGroup):
-    waiting_value = State()
+class TreasuryPayout(StatesGroup):
+    waiting_amount = State()
+    confirm = State()
 

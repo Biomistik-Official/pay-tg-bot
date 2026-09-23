@@ -3,7 +3,7 @@
 """
 
 from typing import Optional, Any
-from datetime import datetime, date, timezone
+from datetime import date
 from math import isfinite
 import aiosqlite
 from bot.database.models import get_db
@@ -415,7 +415,7 @@ async def get_statistics() -> dict:
             total_users = (await c.fetchone())[0]
 
         async with db.execute(
-            """SELECT 
+            """SELECT
                  COALESCE(SUM(tickets_platinum), 0),
                  COALESCE(SUM(tickets_gold), 0),
                  COALESCE(SUM(tickets_silver), 0),
@@ -662,1112 +662,620 @@ async def get_all_staff() -> list[dict]:
             return [dict(r) for r in rows]
 
 
-async def get_staff_rank(user_id: int) -> str:
-    """Получить текущий ранг активного Staff (по внутреннему ID пользователя)."""
-    from bot.utils.ranks import DEFAULT_RANK
-    async with get_db() as db:
-        async with db.execute(
-            "SELECT rank FROM staff WHERE user_id = ? AND is_active = 1", (user_id,)
-        ) as cursor:
-            row = await cursor.fetchone()
-            return (row[0] or DEFAULT_RANK) if row else DEFAULT_RANK
 
-
-async def set_staff_rank(user_id: int, new_rank: str, changed_by: int) -> Optional[str]:
-    """
-    Назначить/изменить ранг Staff. Возвращает предыдущий ранг (для журнала).
-    Записывает изменение в staff_rank_history.
-    """
-    from bot.utils.ranks import DEFAULT_RANK
-    async with get_db() as db:
-        async with db.execute(
-            "SELECT rank FROM staff WHERE user_id = ?", (user_id,)
-        ) as cursor:
-            row = await cursor.fetchone()
-            old_rank = (row[0] or DEFAULT_RANK) if row else None
-
-        await db.execute(
-            "UPDATE staff SET rank = ? WHERE user_id = ?", (new_rank, user_id)
-        )
-        await db.execute(
-            """INSERT INTO staff_rank_history (user_id, old_rank, new_rank, changed_by)
-               VALUES (?, ?, ?, ?)""",
-            (user_id, old_rank, new_rank, changed_by)
-        )
-        await db.commit()
-        return old_rank
-
-
-async def get_staff_rank_history(user_id: int, limit: int = 20) -> list[dict]:
-    """Получить историю изменений ранга Staff."""
+async def get_staff_activity(user_id: int) -> dict:
+    """Получить сохранённые показатели активности Staff."""
     async with get_db() as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
-            """SELECT h.*, u.nickname as changed_by_nickname
-               FROM staff_rank_history h
-               LEFT JOIN users u ON h.changed_by = u.telegram_id
-               WHERE h.user_id = ?
-               ORDER BY h.changed_at DESC
-               LIMIT ?""",
-            (user_id, limit)
-        ) as cursor:
-            rows = await cursor.fetchall()
-            return [dict(r) for r in rows]
-
-
-# Коэффициенты рангов
-
-async def get_rank_coefficient(rank: str) -> float:
-    """Квестовый коэффициент ранга."""
-    from bot.utils.ranks import RANK_META, DEFAULT_RANK
-    default = RANK_META.get(rank, RANK_META[DEFAULT_RANK])["default_coef"]
-    async with get_db() as db:
-        async with db.execute(
-            "SELECT coefficient FROM staff_rank_coefficients WHERE rank = ?", (rank,)
+            "SELECT * FROM staff_activities WHERE user_id = ?", (user_id,)
         ) as cursor:
             row = await cursor.fetchone()
-            return float(row[0]) if row else float(default)
-
-
-async def get_rank_category_coefficient(rank: str) -> float:
-    """Категорийный коэффициент ранга."""
-    from bot.utils.ranks import RANK_META, DEFAULT_RANK
-    default = RANK_META.get(rank, RANK_META[DEFAULT_RANK])["default_cat_coef"]
-    async with get_db() as db:
-        async with db.execute(
-            "SELECT category_coefficient FROM staff_rank_coefficients WHERE rank = ?",
-            (rank,),
-        ) as cursor:
-            row = await cursor.fetchone()
-            return float(row[0]) if row else float(default)
-
-
-async def get_all_rank_coefficients() -> dict:
-    """Все квестовые коэффициенты ({rank: coefficient})."""
-    async with get_db() as db:
-        async with db.execute(
-            "SELECT rank, coefficient FROM staff_rank_coefficients"
-        ) as cursor:
-            rows = await cursor.fetchall()
-            return {row[0]: float(row[1]) for row in rows}
-
-
-async def get_all_rank_category_coefficients() -> dict:
-    """Все категорийные коэффициенты ({rank: category_coefficient})."""
-    async with get_db() as db:
-        async with db.execute(
-            "SELECT rank, category_coefficient FROM staff_rank_coefficients"
-        ) as cursor:
-            rows = await cursor.fetchall()
-            return {row[0]: float(row[1]) for row in rows}
-
-
-async def set_rank_coefficient(rank: str, coefficient: float) -> None:
-    """Изменить квестовый коэффициент ранга (сохраняет категорийный)."""
-    from bot.utils.ranks import RANK_META, DEFAULT_RANK
-    async with get_db() as db:
-        async with db.execute(
-            "SELECT category_coefficient FROM staff_rank_coefficients WHERE rank = ?",
-            (rank,),
-        ) as cursor:
-            row = await cursor.fetchone()
-            cat_coef = float(row[0]) if row else float(
-                RANK_META.get(rank, RANK_META[DEFAULT_RANK])["default_cat_coef"]
-            )
-        await db.execute(
-            """INSERT OR REPLACE INTO staff_rank_coefficients
-                (rank, coefficient, category_coefficient) VALUES (?, ?, ?)""",
-            (rank, coefficient, cat_coef),
-        )
-        await db.commit()
-
-
-async def set_rank_category_coefficient(rank: str, coefficient: float) -> None:
-    """Изменить категорийный коэффициент ранга (сохраняет квестовый)."""
-    from bot.utils.ranks import RANK_META, DEFAULT_RANK
-    async with get_db() as db:
-        async with db.execute(
-            "SELECT coefficient FROM staff_rank_coefficients WHERE rank = ?",
-            (rank,),
-        ) as cursor:
-            row = await cursor.fetchone()
-            quest_coef = float(row[0]) if row else float(
-                RANK_META.get(rank, RANK_META[DEFAULT_RANK])["default_coef"]
-            )
-        await db.execute(
-            """INSERT OR REPLACE INTO staff_rank_coefficients
-                (rank, coefficient, category_coefficient) VALUES (?, ?, ?)""",
-            (rank, quest_coef, coefficient),
-        )
-        await db.commit()
-
-
-async def get_staff_stats(user_id: int) -> dict:
-    """
-    Получить статистику Staff: выполнено квестов, баллы, тикеты, последняя активность.
-    Баллы/тикеты считаются по фактически начисленной награде (с учётом коэффициента),
-    с откатом на базовую награду квеста для старых записей без paid_amount.
-    """
-    async with get_db() as db:
-        async with db.execute(
-            """SELECT COUNT(*) FROM quest_assignments
-               WHERE user_id = ? AND status = 'approved'""",
-            (user_id,)
-        ) as cursor:
-            completed = (await cursor.fetchone())[0]
-
-        async with db.execute(
-            """SELECT COALESCE(SUM(COALESCE(qa.paid_amount, q.reward_amount)), 0)
-               FROM quest_assignments qa
-               JOIN quests q ON qa.quest_id = q.id
-               WHERE qa.user_id = ? AND qa.status = 'approved' AND q.reward_type = 'points'""",
-            (user_id,)
-        ) as cursor:
-            earned_points = (await cursor.fetchone())[0]
-
-        async with db.execute(
-            """SELECT COALESCE(SUM(COALESCE(qa.paid_amount, q.reward_amount)), 0)
-               FROM quest_assignments qa
-               JOIN quests q ON qa.quest_id = q.id
-               WHERE qa.user_id = ? AND qa.status = 'approved' AND q.reward_type LIKE 'tickets_%'""",
-            (user_id,)
-        ) as cursor:
-            earned_tickets = (await cursor.fetchone())[0]
-
-        async with db.execute(
-            """SELECT MAX(qa.reviewed_at)
-               FROM quest_assignments qa
-               WHERE qa.user_id = ? AND qa.status = 'approved'""",
-            (user_id,)
-        ) as cursor:
-            last_activity = (await cursor.fetchone())[0]
-
+    if row:
+        return dict(row)
     return {
-        "completed": completed,
-        "earned_points": earned_points,
-        "earned_tickets": earned_tickets,
-        "last_activity": last_activity,
+        "user_id": user_id,
+        "activity_count": 0,
+        "earned_points": 0,
+        "earned_tickets": 0,
+        "last_activity_at": None,
     }
 
 
-async def get_staff_leaderboard() -> list[dict]:
-    """Получить рейтинг Staff по количеству выполненных квестов."""
+async def get_treasuries() -> list[dict]:
+    """Получить все казны с балансом баллов и числом участников."""
     async with get_db() as db:
         db.row_factory = aiosqlite.Row
-        async with db.execute(
-            """SELECT u.nickname, u.telegram_id, s.rank,
-                      COUNT(qa.id) as completed_quests,
-                      COALESCE(SUM(CASE WHEN q.reward_type='points'
-                                        THEN COALESCE(qa.paid_amount, q.reward_amount) ELSE 0 END), 0) as earned_points
-               FROM staff s
-               JOIN users u ON s.user_id = u.id
-               LEFT JOIN quest_assignments qa ON qa.user_id = s.user_id AND qa.status = 'approved'
-               LEFT JOIN quests q ON qa.quest_id = q.id
-               WHERE s.is_active = 1
-               GROUP BY s.user_id
-               ORDER BY completed_quests DESC, earned_points DESC"""
-        ) as cursor:
-            rows = await cursor.fetchall()
-            return [dict(r) for r in rows]
-
-
-async def get_staff_rank_place(telegram_id: int) -> tuple[int, int]:
-    """Вернуть (место, всего) Staff в рейтинге по выполненным квестам."""
-    board = await get_staff_leaderboard()
-    total = len(board)
-    for idx, row in enumerate(board, 1):
-        if row["telegram_id"] == telegram_id:
-            return idx, total
-    return 0, total
-
-
-#  QUESTS
-
-async def create_quest(
-    title: str,
-    description: str,
-    reward_type: str,
-    reward_amount: float,
-    max_executors: int,
-    deadline: Optional[str],
-    created_by: int,
-    reward_mode: str = "flat",
-    repeatable: bool = False,
-) -> int:
-    """Создать квест. Возвращает ID квеста."""
-    async with get_db() as db:
-        cursor = await db.execute(
-            """INSERT INTO quests (title, description, reward_type, reward_amount,
-                                   reward_mode, max_executors, repeatable, deadline, created_by)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (title, description, reward_type, reward_amount, reward_mode,
-             max_executors, int(repeatable), deadline, created_by)
-        )
-        await db.commit()
-        return cursor.lastrowid
-
-
-async def get_quest_by_id(quest_id: int) -> Optional[dict]:
-    """Получить квест по ID."""
-    async with get_db() as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT * FROM quests WHERE id = ?", (quest_id,)
-        ) as cursor:
-            row = await cursor.fetchone()
-            return dict(row) if row else None
-
-
-async def get_all_active_quests() -> list[dict]:
-    """Получить все активные квесты."""
-    async with get_db() as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT * FROM quests WHERE status = 'active' ORDER BY created_at DESC"
-        ) as cursor:
-            rows = await cursor.fetchall()
-            return [dict(r) for r in rows]
-
-
-async def get_all_quests() -> list[dict]:
-    """Получить все квесты (для Owner)."""
-    async with get_db() as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT * FROM quests ORDER BY created_at DESC"
-        ) as cursor:
-            rows = await cursor.fetchall()
-            return [dict(r) for r in rows]
-
-
-async def update_quest(quest_id: int, **fields) -> None:
-    """Обновить поля квеста."""
-    allowed = {"title", "description", "reward_type", "reward_amount",
-                "reward_mode", "max_executors", "repeatable", "deadline", "status"}
-    updates = {k: v for k, v in fields.items() if k in allowed}
-    if not updates:
-        return
-    set_clause = ", ".join(f"{k} = ?" for k in updates)
-    values = list(updates.values()) + [quest_id]
-    async with get_db() as db:
-        await db.execute(f"UPDATE quests SET {set_clause} WHERE id = ?", values)
-        await db.commit()
-
-
-async def close_quest(quest_id: int) -> None:
-    """Закрыть квест."""
-    await update_quest(quest_id, status="closed")
-
-
-async def delete_quest(quest_id: int) -> None:
-    """Удалить квест и все его назначения."""
-    async with get_db() as db:
-        await db.execute("DELETE FROM quest_assignments WHERE quest_id = ?", (quest_id,))
-        await db.execute("DELETE FROM quests WHERE id = ?", (quest_id,))
-        await db.commit()
-
-
-async def get_quest_stats(quest_id: int) -> dict:
-    """Статистика квеста: взято, отправлено, одобрено, отклонено."""
-    async with get_db() as db:
-        async with db.execute(
-            "SELECT COUNT(*) FROM quest_assignments WHERE quest_id = ?", (quest_id,)
-        ) as c:
-            total = (await c.fetchone())[0]
-        async with db.execute(
-            "SELECT COUNT(*) FROM quest_assignments WHERE quest_id = ? AND status = 'taken'", (quest_id,)
-        ) as c:
-            taken = (await c.fetchone())[0]
-        async with db.execute(
-            "SELECT COUNT(*) FROM quest_assignments WHERE quest_id = ? AND status = 'submitted'", (quest_id,)
-        ) as c:
-            submitted = (await c.fetchone())[0]
-        async with db.execute(
-            "SELECT COUNT(*) FROM quest_assignments WHERE quest_id = ? AND status = 'approved'", (quest_id,)
-        ) as c:
-            approved = (await c.fetchone())[0]
-        async with db.execute(
-            "SELECT COUNT(*) FROM quest_assignments WHERE quest_id = ? AND status = 'rejected'", (quest_id,)
-        ) as c:
-            rejected = (await c.fetchone())[0]
-    return {
-        "total": total, "taken": taken,
-        "submitted": submitted, "approved": approved, "rejected": rejected,
-    }
-
-
-async def get_quest_executors(quest_id: int) -> list[dict]:
-    """Получить всех пользователей, которые взяли квест."""
-    async with get_db() as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            """SELECT u.telegram_id, u.username, u.nickname, qa.status, qa.taken_at
-               FROM quest_assignments qa
-               JOIN users u ON qa.user_id = u.id
-               WHERE qa.quest_id = ?
-               ORDER BY qa.taken_at ASC""",
-            (quest_id,)
-        ) as cursor:
-            rows = await cursor.fetchall()
-            return [dict(r) for r in rows]
-
-
-async def get_current_quest_executors(quest_id: int) -> list[dict]:
-    """Получить текущих исполнителей квеста."""
-    async with get_db() as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            """SELECT u.telegram_id, u.username, u.nickname, qa.status, qa.taken_at
-               FROM quest_assignments qa
-               JOIN users u ON qa.user_id = u.id
-               WHERE qa.quest_id = ? AND qa.status IN ('taken', 'submitted')
-               ORDER BY qa.taken_at ASC""",
-            (quest_id,)
-        ) as cursor:
-            rows = await cursor.fetchall()
-            return [dict(r) for r in rows]
-
-
-#  QUEST ASSIGNMENTS
-
-async def take_quest(quest_id: int, user_id: int) -> bool:
-    """Взять квест. Возвращает True при успехе, False если уже взят или лимит."""
-    async with get_db() as db:
-        try:
-            await db.execute("BEGIN IMMEDIATE")
-            async with db.execute(
-                "SELECT max_executors, repeatable, status FROM quests WHERE id = ?",
-                (quest_id,)
-            ) as c:
-                row = await c.fetchone()
-            if not row or row[2] != "active":
-                await db.rollback()
-                return False
-
-            max_exec, repeatable = row[0], bool(row[1])
-            status_filter = "AND status IN ('taken', 'submitted')" if repeatable else ""
-            async with db.execute(
-                f"SELECT COUNT(*) FROM quest_assignments WHERE quest_id = ? {status_filter}",
-                (quest_id,)
-            ) as c:
-                current = (await c.fetchone())[0]
-            if current >= max_exec:
-                await db.rollback()
-                return False
-
-            user_status_filter = "AND status IN ('taken', 'submitted')" if repeatable else ""
-            async with db.execute(
-                f"SELECT 1 FROM quest_assignments WHERE quest_id = ? AND user_id = ? {user_status_filter} LIMIT 1",
-                (quest_id, user_id)
-            ) as c:
-                if await c.fetchone():
-                    await db.rollback()
-                    return False
-
-            await db.execute(
-                """INSERT INTO quest_assignments (quest_id, user_id)
-                   VALUES (?, ?)""",
-                (quest_id, user_id)
-            )
-            await db.commit()
-            return True
-        except Exception:
-            await db.rollback()
-            return False
-
-
-async def get_user_quest_assignment(quest_id: int, user_id: int) -> Optional[dict]:
-    """Получить назначение конкретного пользователя на квест."""
-    async with get_db() as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT * FROM quest_assignments WHERE quest_id = ? AND user_id = ?",
-            (quest_id, user_id)
-        ) as cursor:
-            rows = await cursor.fetchall()
-            row = next((r for r in rows if r["status"] in ("taken", "submitted")), None)
-            if row is None and rows:
-                row = max(rows, key=lambda r: r["id"])
-            return dict(row) if row else None
-
-
-async def get_assignment_by_id(assignment_id: int) -> Optional[dict]:
-    """Получить назначение по ID с данными квеста и пользователя."""
-    async with get_db() as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            """SELECT qa.*, q.title, q.reward_type, q.reward_amount, q.reward_mode,
-                      u.nickname, u.username, u.telegram_id as user_telegram_id,
-                      u.id as user_db_id
-               FROM quest_assignments qa
-               JOIN quests q ON qa.quest_id = q.id
-               JOIN users u ON qa.user_id = u.id
-               WHERE qa.id = ?""",
-            (assignment_id,)
-        ) as cursor:
-            row = await cursor.fetchone()
-            return dict(row) if row else None
-
-
-async def count_quest_executors(quest_id: int) -> int:
-    """Подсчитать текущее количество исполнителей квеста."""
-    async with get_db() as db:
-        async with db.execute(
-            """SELECT COUNT(*)
-               FROM quest_assignments qa
-               JOIN quests q ON q.id = qa.quest_id
-               WHERE qa.quest_id = ?
-                 AND (q.repeatable = 0 OR qa.status IN ('taken', 'submitted'))""",
-            (quest_id,)
-        ) as cursor:
-            row = await cursor.fetchone()
-            return row[0] if row else 0
-
-
-async def submit_quest(
-    assignment_id: int,
-    text: Optional[str],
-    photo: Optional[str],
-    video: Optional[str] = None
-) -> None:
-    """Отправить квест на проверку."""
-    async with get_db() as db:
-        await db.execute(
-            """UPDATE quest_assignments
-               SET status = 'submitted', submitted_at = datetime('now'),
-                   submitted_text = ?, submitted_photo = ?, submitted_video = ?
-               WHERE id = ?""",
-            (text, photo, video, assignment_id)
-        )
-        await db.commit()
-
-
-async def approve_assignment(assignment_id: int, reviewed_by: int) -> None:
-    """Одобрить выполнение квеста."""
-    async with get_db() as db:
-        await db.execute(
-            """UPDATE quest_assignments
-               SET status = 'approved', reviewed_at = datetime('now'), reviewed_by = ?
-               WHERE id = ?""",
-            (reviewed_by, assignment_id)
-        )
-        await db.commit()
-
-
-async def record_assignment_payout(assignment_id: int, coefficient: float, paid_amount: float) -> None:
-    """Записать применённый коэффициент и фактически начисленную награду за квест."""
-    async with get_db() as db:
-        await db.execute(
-            """UPDATE quest_assignments
-               SET applied_coefficient = ?, paid_amount = ?
-               WHERE id = ?""",
-            (coefficient, paid_amount, assignment_id)
-        )
-        await db.commit()
-
-
-async def reject_assignment(assignment_id: int, reviewed_by: int, reason: Optional[str]) -> None:
-    """Отклонить выполнение квеста."""
-    async with get_db() as db:
-        await db.execute(
-            """UPDATE quest_assignments
-               SET status = 'rejected', reviewed_at = datetime('now'),
-                   reviewed_by = ?, reject_reason = ?
-               WHERE id = ?""",
-            (reviewed_by, reason, assignment_id)
-        )
-        await db.commit()
-
-
-async def get_submitted_assignments() -> list[dict]:
-    """Получить все назначения, отправленные на проверку (для Owner)."""
-    async with get_db() as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            """SELECT qa.*, q.title, q.reward_type, q.reward_amount,
-                      u.nickname, u.username, u.telegram_id as user_telegram_id,
-                      u.id as user_db_id
-               FROM quest_assignments qa
-               JOIN quests q ON qa.quest_id = q.id
-               JOIN users u ON qa.user_id = u.id
-               WHERE qa.status = 'submitted'
-               ORDER BY qa.submitted_at ASC"""
-        ) as cursor:
-            rows = await cursor.fetchall()
-            return [dict(r) for r in rows]
-
-
-async def get_user_active_assignments(user_id: int) -> list[dict]:
-    """Получить активные квесты пользователя (taken + submitted)."""
-    async with get_db() as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            """SELECT qa.*, q.title, q.description, q.reward_type, q.reward_amount,
-                      q.deadline, q.status as quest_status
-               FROM quest_assignments qa
-               JOIN quests q ON qa.quest_id = q.id
-               WHERE qa.user_id = ? AND qa.status IN ('taken', 'submitted')
-               ORDER BY qa.taken_at DESC""",
-            (user_id,)
-        ) as cursor:
-            rows = await cursor.fetchall()
-            return [dict(r) for r in rows]
-
-
-async def get_user_quest_history(user_id: int) -> list[dict]:
-    """Получить историю квестов пользователя (approved + rejected)."""
-    async with get_db() as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            """SELECT qa.*, q.title, q.reward_type, q.reward_amount, q.deadline
-               FROM quest_assignments qa
-               JOIN quests q ON qa.quest_id = q.id
-               WHERE qa.user_id = ? AND qa.status IN ('approved', 'rejected')
-               ORDER BY qa.reviewed_at DESC""",
-            (user_id,)
-        ) as cursor:
-            rows = await cursor.fetchall()
-            return [dict(r) for r in rows]
-
-
-async def get_all_users_telegram_ids() -> list[int]:
-    """Получить telegram_id всех незаблокированных пользователей (для рассылок)."""
-    async with get_db() as db:
-        async with db.execute(
-            "SELECT telegram_id FROM users WHERE is_blocked = 0"
-        ) as cursor:
-            rows = await cursor.fetchall()
-            return [r[0] for r in rows]
-
-
-async def get_staff_telegram_ids() -> list[int]:
-    """Получить telegram_id всех активных Staff."""
-    async with get_db() as db:
-        async with db.execute(
-            """SELECT u.telegram_id FROM staff s
-               JOIN users u ON s.user_id = u.id
-               WHERE s.is_active = 1 AND u.is_blocked = 0"""
-        ) as cursor:
-            rows = await cursor.fetchall()
-            return [r[0] for r in rows]
-
-
-async def delete_assignment(assignment_id: int) -> None:
-    """Удалить назначение квеста."""
-    async with get_db() as db:
-        await db.execute("DELETE FROM quest_assignments WHERE id = ?", (assignment_id,))
-        await db.commit()
-
-
-#  STAFF CATEGORIES
-
-async def create_staff_category(
-    name: str,
-    description: str = "",
-    coefficient: float = 1.0,
-    comment: str = "",
-) -> int:
-    """Создать категорию Staff. Возвращает ID."""
-    async with get_db() as db:
-        cursor = await db.execute(
-            """INSERT INTO staff_categories (name, description, coefficient, comment)
-               VALUES (?, ?, ?, ?)""",
-            (name, description, coefficient, comment),
-        )
-        await db.commit()
-        return cursor.lastrowid
-
-
-async def get_all_staff_categories() -> list[dict]:
-    """Все категории Staff (с количеством участников)."""
-    async with get_db() as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            """SELECT c.*,
-                      (SELECT COUNT(*) FROM staff s
-                        WHERE s.category_id = c.id AND s.is_active = 1) AS members_count
-               FROM staff_categories c
-               ORDER BY c.id ASC"""
-        ) as cursor:
-            rows = await cursor.fetchall()
-            return [dict(r) for r in rows]
-
-
-async def get_staff_category(category_id: int) -> Optional[dict]:
-    """Одна категория."""
-    async with get_db() as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT * FROM staff_categories WHERE id = ?", (category_id,)
-        ) as cursor:
-            row = await cursor.fetchone()
-            return dict(row) if row else None
-
-
-async def update_staff_category(category_id: int, **fields) -> None:
-    """Обновить поля категории."""
-    allowed = {"name", "description", "coefficient", "comment"}
-    updates = {k: v for k, v in fields.items() if k in allowed}
-    if not updates:
-        return
-    set_clause = ", ".join(f"{k} = ?" for k in updates)
-    values = list(updates.values()) + [category_id]
-    async with get_db() as db:
-        await db.execute(
-            f"UPDATE staff_categories SET {set_clause} WHERE id = ?", values
-        )
-        await db.commit()
-
-
-async def delete_staff_category(category_id: int) -> None:
-    """Удалить категорию. Участники остаются Staff, просто без категории."""
-    async with get_db() as db:
-        await db.execute(
-            "UPDATE staff SET category_id = NULL WHERE category_id = ?", (category_id,)
-        )
-        await db.execute(
-            "UPDATE staff_category_operations SET category_id = NULL WHERE category_id = ?",
-            (category_id,),
-        )
-        await db.execute(
-            "DELETE FROM staff_categories WHERE id = ?", (category_id,)
-        )
-        await db.commit()
-
-
-async def set_staff_category(user_id: int, category_id: Optional[int]) -> None:
-    """Назначить Staff в категорию (или снять, если None)."""
-    async with get_db() as db:
-        await db.execute(
-            "UPDATE staff SET category_id = ? WHERE user_id = ?",
-            (category_id, user_id),
-        )
-        await db.commit()
-
-
-async def get_category_members(category_id: int) -> list[dict]:
-    """Активные Staff в категории."""
-    async with get_db() as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            """SELECT s.*, u.nickname, u.username, u.telegram_id
-               FROM staff s
-               JOIN users u ON s.user_id = u.id
-               WHERE s.category_id = ? AND s.is_active = 1
-               ORDER BY LOWER(u.nickname) ASC""",
-            (category_id,),
-        ) as cursor:
-            rows = await cursor.fetchall()
-            return [dict(r) for r in rows]
-
-
-async def get_staff_without_category() -> list[dict]:
-    """Активные Staff, не состоящие ни в какой категории."""
-    async with get_db() as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            """SELECT s.*, u.nickname, u.username, u.telegram_id
-               FROM staff s
-               JOIN users u ON s.user_id = u.id
-               WHERE s.category_id IS NULL AND s.is_active = 1
-               ORDER BY LOWER(u.nickname) ASC"""
-        ) as cursor:
-            rows = await cursor.fetchall()
-            return [dict(r) for r in rows]
-
-
-async def record_category_operation(
-    category_id: Optional[int],
-    operation_type: str,
-    scope: str,
-    base_amount: float,
-    performed_by: int,
-    items: list[dict],
-) -> int:
-    """
-    Записать операцию (зарплата/штраф) по категории и её результаты по каждому получателю.
-    items: [{user_id, amount, rank, rank_coef, category_coef}, ...]
-    Возвращает id операции.
-    """
-    total = sum(float(it["amount"]) for it in items)
-    async with get_db() as db:
-        cursor = await db.execute(
-            """INSERT INTO staff_category_operations
-                (category_id, operation_type, scope, base_amount,
-                 total_amount, recipients_count, performed_by)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (category_id, operation_type, scope, base_amount, total, len(items), performed_by),
-        )
-        op_id = cursor.lastrowid
-        for it in items:
-            await db.execute(
-                """INSERT INTO staff_category_operation_items
-                    (operation_id, user_id, amount, rank_at_time, rank_coef, category_coef)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (op_id, it["user_id"], it["amount"], it.get("rank"),
-                 it.get("rank_coef"), it.get("category_coef")),
-            )
-        await db.commit()
-        return op_id
-
-
-async def get_category_operations(category_id: int, limit: int = 30) -> list[dict]:
-    """История операций категории."""
-    async with get_db() as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            """SELECT o.*, u.nickname AS performer_nickname
-               FROM staff_category_operations o
-               LEFT JOIN users u ON o.performed_by = u.telegram_id
-               WHERE o.category_id = ?
-               ORDER BY o.created_at DESC
-               LIMIT ?""",
-            (category_id, limit),
-        ) as cursor:
-            rows = await cursor.fetchall()
-            return [dict(r) for r in rows]
-
-
-async def get_category_operation_items(operation_id: int) -> list[dict]:
-    """Получатели одной операции."""
-    async with get_db() as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            """SELECT it.*, u.nickname, u.telegram_id
-               FROM staff_category_operation_items it
-               JOIN users u ON it.user_id = u.id
-               WHERE it.operation_id = ?
-               ORDER BY it.amount DESC""",
-            (operation_id,),
-        ) as cursor:
-            rows = await cursor.fetchall()
-            return [dict(r) for r in rows]
-
-
-async def get_category_stats(category_id: int) -> dict:
-    """Статистика категории."""
-    async with get_db() as db:
-        async with db.execute(
-            """SELECT COUNT(*) FROM staff
-               WHERE category_id = ? AND is_active = 1""",
-            (category_id,),
-        ) as c:
-            members = (await c.fetchone())[0]
-
-        async with db.execute(
-            """SELECT COALESCE(SUM(total_amount), 0)
-               FROM staff_category_operations
-               WHERE category_id = ? AND operation_type = 'salary'""",
-            (category_id,),
-        ) as c:
-            total_salary = (await c.fetchone())[0]
-
-        async with db.execute(
-            """SELECT COALESCE(SUM(total_amount), 0)
-               FROM staff_category_operations
-               WHERE category_id = ? AND operation_type = 'penalty'""",
-            (category_id,),
-        ) as c:
-            total_penalty = (await c.fetchone())[0]
-
-        async with db.execute(
-            """SELECT MAX(created_at)
-               FROM staff_category_operations
-               WHERE category_id = ? AND operation_type = 'salary'""",
-            (category_id,),
-        ) as c:
-            last_salary = (await c.fetchone())[0]
-
-        # Самый активный по сумме полученных баллов внутри категории
-        async with db.execute(
-            """SELECT u.nickname, SUM(it.amount) AS earned
-               FROM staff_category_operation_items it
-               JOIN staff_category_operations o ON it.operation_id = o.id
-               JOIN users u ON it.user_id = u.id
-               WHERE o.category_id = ? AND o.operation_type = 'salary'
-               GROUP BY it.user_id
-               ORDER BY earned DESC
-               LIMIT 1""",
-            (category_id,),
-        ) as c:
-            row = await c.fetchone()
-            top_member = row[0] if row else None
-            top_amount = row[1] if row else 0
-
-    return {
-        "members": members,
-        "total_salary": total_salary,
-        "total_penalty": total_penalty,
-        "last_salary": last_salary,
-        "top_member": top_member,
-        "top_amount": top_amount,
-    }
-
-
-async def get_staff_category_info(user_id: int) -> Optional[dict]:
-    """Категория, в которой состоит Staff (или None)."""
-    async with get_db() as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            """SELECT c.* FROM staff_categories c
-               JOIN staff s ON s.category_id = c.id
-               WHERE s.user_id = ? AND s.is_active = 1""",
-            (user_id,),
-        ) as cursor:
-            row = await cursor.fetchone()
-            return dict(row) if row else None
-
-
-# Казна клуба
-
-def _validate_treasury_amount(currency_type: str, amount: float) -> None:
-    if currency_type not in TREASURY_CURRENCIES:
-        raise ValueError("Неподдерживаемый тип средств.")
-    if not isfinite(float(amount)) or amount <= 0:
-        raise ValueError("Сумма должна быть больше нуля.")
-    if TREASURY_CURRENCIES[currency_type]["integer"] and not float(amount).is_integer():
-        raise ValueError("Для этого типа средств нужно целое число.")
-
-
-async def get_treasury_snapshot() -> dict:
-    """Получить все балансы казны и дату последней операции."""
-    async with get_db() as db:
-        async with db.execute(
-            "SELECT currency_type, amount FROM treasury_balances"
-        ) as cursor:
-            balances = {row[0]: row[1] for row in await cursor.fetchall()}
-        async with db.execute(
-            "SELECT MAX(created_at) FROM treasury_transactions"
-        ) as cursor:
-            row = await cursor.fetchone()
-            last_changed = row[0] if row else None
-    return {"balances": balances, "last_changed": last_changed}
-
-
-async def get_treasury_history(limit: int = 8, offset: int = 0) -> list[dict]:
-    """Получить историю казны."""
-    async with get_db() as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            """SELECT tt.*,
-                      ru.nickname AS related_user_nickname,
-                      ru.telegram_id AS related_user_telegram_id,
-                      iu.nickname AS initiator_nickname
-               FROM treasury_transactions tt
-               LEFT JOIN users ru ON ru.id = tt.related_user_id
-               LEFT JOIN users iu ON iu.telegram_id = tt.initiated_by_telegram_id
-               ORDER BY tt.id DESC
-               LIMIT ? OFFSET ?""",
-            (limit, offset),
-        ) as cursor:
+        async with db.execute("""
+            SELECT t.*,
+                   COALESCE(b.amount, 0) AS points_balance,
+                   COUNT(DISTINCT tm.user_id) AS members_count,
+                   MAX(CASE WHEN tt.operation_type IN
+                       ('donation', 'manual_deposit', 'distribution_in')
+                       THEN tt.created_at END) AS last_deposit
+            FROM treasury t
+            LEFT JOIN treasury_balances b
+                ON b.treasury_id = t.id AND b.currency_type = 'points'
+            LEFT JOIN treasury_members tm ON tm.treasury_id = t.id
+            LEFT JOIN treasury_transactions tt ON tt.treasury_id = t.id
+            GROUP BY t.id
+            ORDER BY t.is_general DESC, t.id
+        """) as cursor:
             return [dict(row) for row in await cursor.fetchall()]
 
 
-async def count_treasury_history() -> int:
-    """Получить число операций казны."""
+async def get_treasury(treasury_id: int) -> Optional[dict]:
+    """Получить казну и её текущие показатели."""
     async with get_db() as db:
-        async with db.execute("SELECT COUNT(*) FROM treasury_transactions") as cursor:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT t.*,
+                   COALESCE(b.amount, 0) AS points_balance,
+                   COUNT(DISTINCT tm.user_id) AS members_count,
+                   MAX(CASE WHEN tt.operation_type IN
+                       ('donation', 'manual_deposit', 'distribution_in')
+                       THEN tt.created_at END) AS last_deposit
+            FROM treasury t
+            LEFT JOIN treasury_balances b
+                ON b.treasury_id = t.id AND b.currency_type = 'points'
+            LEFT JOIN treasury_members tm ON tm.treasury_id = t.id
+            LEFT JOIN treasury_transactions tt ON tt.treasury_id = t.id
+            WHERE t.id = ?
+            GROUP BY t.id
+        """, (treasury_id,)) as cursor:
+            row = await cursor.fetchone()
+            return dict(row) if row else None
+
+
+async def get_treasury_by_code(code: str) -> Optional[dict]:
+    """Получить казну по внутреннему коду."""
+    async with get_db() as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM treasury WHERE code = ?", (code,)) as cursor:
+            row = await cursor.fetchone()
+            return dict(row) if row else None
+
+
+async def get_treasury_balances(treasury_id: int) -> dict[str, float]:
+    """Получить все ненулевые балансы одной казны."""
+    async with get_db() as db:
+        async with db.execute(
+            "SELECT currency_type, amount FROM treasury_balances WHERE treasury_id = ?",
+            (treasury_id,),
+        ) as cursor:
+            return {row[0]: row[1] for row in await cursor.fetchall()}
+
+
+async def get_treasury_history(
+    treasury_id: int, limit: int = 8, offset: int = 0
+) -> list[dict]:
+    """Получить историю конкретной казны."""
+    async with get_db() as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT tt.*, u.nickname AS related_user_nickname,
+                   actor.nickname AS actor_nickname,
+                   target.name AS related_treasury_name,
+                   target.emoji AS related_treasury_emoji
+            FROM treasury_transactions tt
+            LEFT JOIN users u ON u.id = tt.related_user_id
+            LEFT JOIN users actor
+                ON actor.telegram_id = tt.initiated_by_telegram_id
+            LEFT JOIN treasury target ON target.id = tt.related_treasury_id
+            WHERE tt.treasury_id = ?
+            ORDER BY tt.created_at DESC, tt.id DESC
+            LIMIT ? OFFSET ?
+        """, (treasury_id, limit, offset)) as cursor:
+            return [dict(row) for row in await cursor.fetchall()]
+
+
+async def count_treasury_history(treasury_id: int) -> int:
+    async with get_db() as db:
+        async with db.execute(
+            "SELECT COUNT(*) FROM treasury_transactions WHERE treasury_id = ?",
+            (treasury_id,),
+        ) as cursor:
             row = await cursor.fetchone()
             return row[0] if row else 0
 
 
-async def donate_to_treasury(
-    telegram_id: int,
+def _validate_treasury_amount(currency_type: str, amount: float) -> None:
+    if currency_type not in TREASURY_CURRENCIES:
+        raise ValueError("Неизвестная валюта")
+    if not isfinite(float(amount)) or amount <= 0:
+        raise ValueError("Сумма должна быть положительной")
+    if TREASURY_CURRENCIES[currency_type]["integer"] and not float(amount).is_integer():
+        raise ValueError("Для этой валюты нужна целая сумма")
+
+
+async def _balance_for_update(
+    db: aiosqlite.Connection, treasury_id: int, currency_type: str
+) -> float:
+    await db.execute(
+        """INSERT OR IGNORE INTO treasury_balances
+           (treasury_id, currency_type, amount) VALUES (?, ?, 0)""",
+        (treasury_id, currency_type),
+    )
+    async with db.execute(
+        """SELECT amount FROM treasury_balances
+           WHERE treasury_id = ? AND currency_type = ?""",
+        (treasury_id, currency_type),
+    ) as cursor:
+        row = await cursor.fetchone()
+        if row is None:
+            raise ValueError("Казна не найдена")
+        return float(row[0])
+
+
+async def top_up_treasuries(
+    amounts: dict[int, float],
     currency_type: str,
-    amount: float,
+    initiated_by_telegram_id: int,
+    related_user_id: int,
+    reason: str,
+    source: str,
     request_key: str,
-) -> dict:
-    """Атомарно списать средства у пользователя и зачислить их в казну."""
-    if currency_type not in DONATION_CURRENCIES:
-        raise ValueError("Этот тип средств нельзя пожертвовать.")
-    if not request_key:
-        raise ValueError("Не задан ключ операции.")
-    _validate_treasury_amount(currency_type, amount)
+) -> list[dict]:
+    """Атомарно пополнить одну или несколько казен."""
+    if not amounts or not request_key:
+        raise ValueError("Не выбраны казны")
+    for amount in amounts.values():
+        _validate_treasury_amount(currency_type, amount)
 
     async with get_db() as db:
         db.row_factory = aiosqlite.Row
-        await db.execute("PRAGMA foreign_keys = ON")
         await db.execute("BEGIN IMMEDIATE")
         try:
+            placeholders = ",".join("?" for _ in amounts)
             async with db.execute(
-                "SELECT * FROM treasury_transactions WHERE request_key = ?",
-                (request_key,),
+                f"SELECT id FROM treasury WHERE id IN ({placeholders})",
+                tuple(amounts),
             ) as cursor:
-                existing = await cursor.fetchone()
-            if existing:
-                result = dict(existing)
-                result["duplicate"] = True
-                await db.commit()
-                return result
+                found = {row[0] for row in await cursor.fetchall()}
+            if found != set(amounts):
+                raise ValueError("Одна из казен не найдена")
 
-            async with db.execute(
-                "SELECT id, nickname, is_blocked, " + currency_type + " AS balance "
-                "FROM users WHERE telegram_id = ?",
-                (telegram_id,),
-            ) as cursor:
-                user = await cursor.fetchone()
-            if not user or user["is_blocked"]:
-                raise TreasuryUserNotFoundError("Пользователь не найден или заблокирован.")
-            if float(user["balance"] or 0) < float(amount):
-                raise TreasuryInsufficientFundsError("Недостаточно средств для пожертвования.")
-
-            cursor = await db.execute(
-                f"""UPDATE users
-                    SET {currency_type} = {currency_type} - ?
-                    WHERE id = ? AND {currency_type} >= ?""",
-                (amount, user["id"], amount),
-            )
-            if cursor.rowcount != 1:
-                raise TreasuryInsufficientFundsError("Недостаточно средств для пожертвования.")
-
-            await db.execute(
-                "INSERT OR IGNORE INTO treasury_balances (currency_type, amount) VALUES (?, 0)",
-                (currency_type,),
-            )
-            async with db.execute(
-                "SELECT amount FROM treasury_balances WHERE currency_type = ?",
-                (currency_type,),
-            ) as cursor:
-                balance_before = (await cursor.fetchone())[0]
-            balance_after = balance_before + amount
-            if not isfinite(float(balance_after)):
-                raise ValueError("Итоговый баланс выше допустимого.")
-            await db.execute(
-                """UPDATE treasury_balances
-                   SET amount = ?, updated_at = datetime('now')
-                   WHERE currency_type = ?""",
-                (balance_after, currency_type),
-            )
-            await db.execute(
-                """INSERT INTO transactions
-                   (user_id, currency_type, operation, amount, reason, performed_by)
-                   VALUES (?, ?, 'subtract', ?, ?, ?)""",
-                (
-                    user["id"],
-                    currency_type,
-                    amount,
-                    "Пожертвование в казну клуба",
-                    telegram_id,
-                ),
-            )
-            cursor = await db.execute(
-                """INSERT INTO treasury_transactions
-                   (operation_type, currency_type, amount, balance_before,
-                    balance_after, related_user_id, initiated_by_telegram_id,
-                    reason, request_key)
-                   VALUES ('donation', ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    currency_type,
-                    amount,
-                    balance_before,
-                    balance_after,
-                    user["id"],
-                    telegram_id,
-                    f"Пожертвование от {user['nickname']}",
-                    request_key,
-                ),
-            )
-            transaction_id = cursor.lastrowid
+            results = []
+            for treasury_id, amount in amounts.items():
+                item_key = f"{request_key}:{treasury_id}"
+                async with db.execute(
+                    "SELECT id FROM treasury_transactions WHERE request_key = ?",
+                    (item_key,),
+                ) as cursor:
+                    if await cursor.fetchone():
+                        raise ValueError("Операция уже выполнена")
+                before = await _balance_for_update(db, treasury_id, currency_type)
+                after = before + float(amount)
+                await db.execute(
+                    """UPDATE treasury_balances
+                       SET amount = ?, updated_at = datetime('now')
+                       WHERE treasury_id = ? AND currency_type = ?""",
+                    (after, treasury_id, currency_type),
+                )
+                cursor = await db.execute("""
+                    INSERT INTO treasury_transactions (
+                        treasury_id, operation_type, currency_type, amount,
+                        balance_before, balance_after, related_user_id,
+                        initiated_by_telegram_id, reason, source, request_key
+                    ) VALUES (?, 'manual_deposit', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    treasury_id, currency_type, amount, before, after,
+                    related_user_id, initiated_by_telegram_id, reason,
+                    source, item_key,
+                ))
+                results.append({
+                    "id": cursor.lastrowid,
+                    "treasury_id": treasury_id,
+                    "balance_before": before,
+                    "balance_after": after,
+                })
             await db.commit()
-            return {
-                "id": transaction_id,
-                "operation_type": "donation",
-                "currency_type": currency_type,
-                "amount": amount,
-                "balance_before": balance_before,
-                "balance_after": balance_after,
-                "duplicate": False,
-            }
+            return results
         except Exception:
             await db.rollback()
             raise
 
 
-async def adjust_treasury_balance(
-    operation_type: str,
+async def donate_to_treasury(
+    treasury_id: int,
+    user_id: int,
     currency_type: str,
     amount: float,
     initiated_by_telegram_id: int,
     reason: str,
     request_key: str,
 ) -> dict:
-    """Атомарно пополнить казну или списать из неё средства."""
-    if operation_type not in {"manual_deposit", "expense"}:
-        raise ValueError("Неверный тип операции казны.")
-    if not request_key:
-        raise ValueError("Не задан ключ операции.")
-    if operation_type == "expense" and not reason.strip():
-        raise ValueError("Причина списания обязательна.")
+    """Списать средства пользователя и атомарно зачислить их в казну."""
+    if currency_type not in DONATION_CURRENCIES:
+        raise ValueError("Эту валюту нельзя пожертвовать")
     _validate_treasury_amount(currency_type, amount)
-
     async with get_db() as db:
         db.row_factory = aiosqlite.Row
         await db.execute("BEGIN IMMEDIATE")
         try:
             async with db.execute(
-                "SELECT * FROM treasury_transactions WHERE request_key = ?",
+                "SELECT id FROM treasury_transactions WHERE request_key = ?",
                 (request_key,),
             ) as cursor:
-                existing = await cursor.fetchone()
-            if existing:
-                result = dict(existing)
-                result["duplicate"] = True
-                await db.commit()
-                return result
-
-            await db.execute(
-                "INSERT OR IGNORE INTO treasury_balances (currency_type, amount) VALUES (?, 0)",
-                (currency_type,),
-            )
+                if await cursor.fetchone():
+                    raise ValueError("Операция уже выполнена")
             async with db.execute(
-                "SELECT amount FROM treasury_balances WHERE currency_type = ?",
-                (currency_type,),
+                f"SELECT {currency_type} FROM users WHERE id = ?", (user_id,)
             ) as cursor:
-                balance_before = (await cursor.fetchone())[0]
-
-            if operation_type == "expense":
-                if float(balance_before) < float(amount):
-                    raise TreasuryInsufficientFundsError("В казне недостаточно средств.")
-                balance_after = balance_before - amount
-            else:
-                balance_after = balance_before + amount
-            if not isfinite(float(balance_after)):
-                raise ValueError("Итоговый баланс выше допустимого.")
+                row = await cursor.fetchone()
+            if not row:
+                raise TreasuryUserNotFoundError("Пользователь не найден")
+            if float(row[0]) < float(amount):
+                raise TreasuryInsufficientFundsError("Недостаточно средств")
 
             await db.execute(
-                """UPDATE treasury_balances
-                   SET amount = ?, updated_at = datetime('now')
-                   WHERE currency_type = ?""",
-                (balance_after, currency_type),
+                f"UPDATE users SET {currency_type} = {currency_type} - ? WHERE id = ?",
+                (amount, user_id),
             )
-            cursor = await db.execute(
-                """INSERT INTO treasury_transactions
-                   (operation_type, currency_type, amount, balance_before,
-                    balance_after, initiated_by_telegram_id, reason, request_key)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    operation_type,
-                    currency_type,
-                    amount,
-                    balance_before,
-                    balance_after,
-                    initiated_by_telegram_id,
-                    reason,
-                    request_key,
-                ),
-            )
-            transaction_id = cursor.lastrowid
+            await db.execute("""
+                INSERT INTO transactions
+                    (user_id, currency_type, operation, amount, reason, performed_by)
+                VALUES (?, ?, 'subtract', ?, ?, ?)
+            """, (
+                user_id, currency_type, amount,
+                f"Пожертвование в казну: {reason}".rstrip(": "),
+                initiated_by_telegram_id,
+            ))
+            before = await _balance_for_update(db, treasury_id, currency_type)
+            after = before + float(amount)
+            await db.execute("""
+                UPDATE treasury_balances
+                SET amount = ?, updated_at = datetime('now')
+                WHERE treasury_id = ? AND currency_type = ?
+            """, (after, treasury_id, currency_type))
+            cursor = await db.execute("""
+                INSERT INTO treasury_transactions (
+                    treasury_id, operation_type, currency_type, amount,
+                    balance_before, balance_after, related_user_id,
+                    initiated_by_telegram_id, reason, source, request_key
+                ) VALUES (?, 'donation', ?, ?, ?, ?, ?, ?, ?, 'donation', ?)
+            """, (
+                treasury_id, currency_type, amount, before, after, user_id,
+                initiated_by_telegram_id, reason, request_key,
+            ))
             await db.commit()
             return {
-                "id": transaction_id,
-                "operation_type": operation_type,
-                "currency_type": currency_type,
-                "amount": amount,
-                "balance_before": balance_before,
-                "balance_after": balance_after,
-                "duplicate": False,
+                "id": cursor.lastrowid,
+                "balance_before": before,
+                "balance_after": after,
             }
         except Exception:
             await db.rollback()
             raise
 
+
+async def spend_from_treasury(
+    treasury_id: int,
+    currency_type: str,
+    amount: float,
+    initiated_by_telegram_id: int,
+    reason: str,
+    request_key: str,
+) -> dict:
+    """Атомарно списать средства из выбранной казны."""
+    _validate_treasury_amount(currency_type, amount)
+    async with get_db() as db:
+        await db.execute("BEGIN IMMEDIATE")
+        try:
+            before = await _balance_for_update(db, treasury_id, currency_type)
+            if before < float(amount):
+                raise TreasuryInsufficientFundsError("Недостаточно средств в казне")
+            after = before - float(amount)
+            await db.execute("""
+                UPDATE treasury_balances
+                SET amount = ?, updated_at = datetime('now')
+                WHERE treasury_id = ? AND currency_type = ?
+            """, (after, treasury_id, currency_type))
+            cursor = await db.execute("""
+                INSERT INTO treasury_transactions (
+                    treasury_id, operation_type, currency_type, amount,
+                    balance_before, balance_after, initiated_by_telegram_id,
+                    reason, source, request_key
+                ) VALUES (?, 'expense', ?, ?, ?, ?, ?, ?, 'owner', ?)
+            """, (
+                treasury_id, currency_type, amount, before, after,
+                initiated_by_telegram_id, reason, request_key,
+            ))
+            await db.commit()
+            return {
+                "id": cursor.lastrowid,
+                "balance_before": before,
+                "balance_after": after,
+            }
+        except Exception:
+            await db.rollback()
+            raise
+
+
+async def get_distribution_settings() -> list[dict]:
+    async with get_db() as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT t.id AS treasury_id, t.code, t.name, t.emoji,
+                   COALESCE(s.percentage, 0) AS percentage
+            FROM treasury t
+            LEFT JOIN treasury_distribution_settings s ON s.treasury_id = t.id
+            WHERE t.is_general = 0
+            ORDER BY t.id
+        """) as cursor:
+            return [dict(row) for row in await cursor.fetchall()]
+
+
+async def set_distribution_settings(
+    percentages: dict[int, float], updated_by: int
+) -> None:
+    if not percentages or abs(sum(percentages.values()) - 100) > 0.000001:
+        raise ValueError("Сумма процентов должна составлять ровно 100%")
+    if any(value < 0 or value > 100 for value in percentages.values()):
+        raise ValueError("Процент должен быть от 0 до 100")
+
+    async with get_db() as db:
+        await db.execute("BEGIN IMMEDIATE")
+        try:
+            placeholders = ",".join("?" for _ in percentages)
+            async with db.execute(
+                f"SELECT id FROM treasury WHERE is_general = 0 AND id IN ({placeholders})",
+                tuple(percentages),
+            ) as cursor:
+                found = {row[0] for row in await cursor.fetchall()}
+            if found != set(percentages):
+                raise ValueError("Переданы не все отдельные казны")
+            async with db.execute(
+                "SELECT COUNT(*) FROM treasury WHERE is_general = 0"
+            ) as cursor:
+                total = (await cursor.fetchone())[0]
+            if total != len(percentages):
+                raise ValueError("Нужно указать проценты для всех казен")
+
+            for treasury_id, percentage in percentages.items():
+                await db.execute("""
+                    INSERT INTO treasury_distribution_settings
+                        (treasury_id, percentage, updated_at, updated_by)
+                    VALUES (?, ?, datetime('now'), ?)
+                    ON CONFLICT(treasury_id) DO UPDATE SET
+                        percentage = excluded.percentage,
+                        updated_at = excluded.updated_at,
+                        updated_by = excluded.updated_by
+                """, (treasury_id, percentage, updated_by))
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            raise
+
+
+async def distribute_general_treasury(
+    amount: float,
+    allocations: dict[int, float],
+    initiated_by_telegram_id: int,
+    reason: str,
+    request_key: str,
+) -> dict:
+    """Атомарно распределить баллы общей казны по отдельным."""
+    _validate_treasury_amount("points", amount)
+    if not allocations or abs(sum(allocations.values()) - float(amount)) > 0.000001:
+        raise ValueError("Сумма распределения не совпадает")
+    if any(value < 0 for value in allocations.values()):
+        raise ValueError("Доли не могут быть отрицательными")
+
+    async with get_db() as db:
+        await db.execute("BEGIN IMMEDIATE")
+        try:
+            async with db.execute(
+                "SELECT id FROM treasury WHERE is_general = 1 LIMIT 1"
+            ) as cursor:
+                row = await cursor.fetchone()
+            if not row:
+                raise ValueError("Общая казна не найдена")
+            general_id = row[0]
+            before_general = await _balance_for_update(db, general_id, "points")
+            if before_general < float(amount):
+                raise TreasuryInsufficientFundsError("Недостаточно средств в общей казне")
+
+            after_general = before_general - float(amount)
+            await db.execute("""
+                UPDATE treasury_balances
+                SET amount = ?, updated_at = datetime('now')
+                WHERE treasury_id = ? AND currency_type = 'points'
+            """, (after_general, general_id))
+
+            running_general = before_general
+            for treasury_id, share in allocations.items():
+                if share == 0:
+                    continue
+                async with db.execute(
+                    "SELECT is_general FROM treasury WHERE id = ?", (treasury_id,)
+                ) as cursor:
+                    target = await cursor.fetchone()
+                if not target or target[0]:
+                    raise ValueError("Неверная отдельная казна")
+
+                target_before = await _balance_for_update(db, treasury_id, "points")
+                target_after = target_before + float(share)
+                await db.execute("""
+                    UPDATE treasury_balances
+                    SET amount = ?, updated_at = datetime('now')
+                    WHERE treasury_id = ? AND currency_type = 'points'
+                """, (target_after, treasury_id))
+                running_after = running_general - float(share)
+                await db.execute("""
+                    INSERT INTO treasury_transactions (
+                        treasury_id, operation_type, currency_type, amount,
+                        balance_before, balance_after, related_treasury_id,
+                        initiated_by_telegram_id, reason, source, request_key
+                    ) VALUES (?, 'distribution_out', 'points', ?, ?, ?, ?, ?, ?,
+                              'distribution', ?)
+                """, (
+                    general_id, share, running_general, running_after, treasury_id,
+                    initiated_by_telegram_id, reason,
+                    f"{request_key}:out:{treasury_id}",
+                ))
+                await db.execute("""
+                    INSERT INTO treasury_transactions (
+                        treasury_id, operation_type, currency_type, amount,
+                        balance_before, balance_after, related_treasury_id,
+                        initiated_by_telegram_id, reason, source, request_key
+                    ) VALUES (?, 'distribution_in', 'points', ?, ?, ?, ?, ?, ?,
+                              'distribution', ?)
+                """, (
+                    treasury_id, share, target_before, target_after, general_id,
+                    initiated_by_telegram_id, reason,
+                    f"{request_key}:in:{treasury_id}",
+                ))
+                running_general = running_after
+            await db.commit()
+            return {
+                "balance_before": before_general,
+                "balance_after": after_general,
+            }
+        except Exception:
+            await db.rollback()
+            raise
+
+
+async def get_treasury_members(treasury_id: int) -> list[dict]:
+    async with get_db() as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT tm.*, u.telegram_id, u.nickname, u.username, u.points,
+                   a.activity_count, a.earned_points, a.earned_tickets,
+                   a.last_activity_at
+            FROM treasury_members tm
+            JOIN users u ON u.id = tm.user_id
+            JOIN staff s ON s.user_id = u.id AND s.is_active = 1
+            LEFT JOIN staff_activities a ON a.user_id = u.id
+            WHERE tm.treasury_id = ?
+            ORDER BY LOWER(u.nickname)
+        """, (treasury_id,)) as cursor:
+            return [dict(row) for row in await cursor.fetchall()]
+
+
+async def get_user_treasury(user_id: int) -> Optional[dict]:
+    async with get_db() as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT t.* FROM treasury_members tm
+            JOIN treasury t ON t.id = tm.treasury_id
+            WHERE tm.user_id = ?
+        """, (user_id,)) as cursor:
+            row = await cursor.fetchone()
+            return dict(row) if row else None
+
+
+async def assign_staff_to_treasury(
+    treasury_id: int, user_id: int, assigned_by: int
+) -> None:
+    """Назначить Staff в казну, автоматически сняв старое назначение."""
+    async with get_db() as db:
+        await db.execute("BEGIN IMMEDIATE")
+        try:
+            async with db.execute(
+                "SELECT 1 FROM staff WHERE user_id = ? AND is_active = 1", (user_id,)
+            ) as cursor:
+                if not await cursor.fetchone():
+                    raise ValueError("Пользователь не является Staff")
+            async with db.execute(
+                "SELECT 1 FROM treasury WHERE id = ? AND is_general = 0", (treasury_id,)
+            ) as cursor:
+                if not await cursor.fetchone():
+                    raise ValueError("Отдельная казна не найдена")
+            await db.execute("DELETE FROM treasury_members WHERE user_id = ?", (user_id,))
+            await db.execute("""
+                INSERT INTO treasury_members
+                    (treasury_id, user_id, assigned_by, assigned_at)
+                VALUES (?, ?, ?, datetime('now'))
+            """, (treasury_id, user_id, assigned_by))
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            raise
+
+
+async def remove_staff_from_treasury(treasury_id: int, user_id: int) -> None:
+    async with get_db() as db:
+        await db.execute(
+            "DELETE FROM treasury_members WHERE treasury_id = ? AND user_id = ?",
+            (treasury_id, user_id),
+        )
+        await db.commit()
+
+
+async def payout_staff_from_treasury(
+    treasury_id: int,
+    payouts: dict[int, float],
+    initiated_by_telegram_id: int,
+    reason: str,
+    request_key: str,
+) -> dict:
+    """Атомарно выдать баллы одному или нескольким участникам казны."""
+    if not payouts or not request_key:
+        raise ValueError("Не выбраны получатели")
+    for amount in payouts.values():
+        _validate_treasury_amount("points", amount)
+
+    total = sum(float(amount) for amount in payouts.values())
+    async with get_db() as db:
+        await db.execute("BEGIN IMMEDIATE")
+        try:
+            before = await _balance_for_update(db, treasury_id, "points")
+            if before < total:
+                raise TreasuryInsufficientFundsError("Недостаточно средств в казне")
+
+            placeholders = ",".join("?" for _ in payouts)
+            async with db.execute(
+                f"""SELECT user_id FROM treasury_members
+                    WHERE treasury_id = ? AND user_id IN ({placeholders})""",
+                (treasury_id, *payouts),
+            ) as cursor:
+                members = {row[0] for row in await cursor.fetchall()}
+            if members != set(payouts):
+                raise ValueError("Один из получателей не состоит в казне")
+
+            running = before
+            for user_id, amount in payouts.items():
+                amount = float(amount)
+                after = running - amount
+                await db.execute(
+                    "UPDATE users SET points = points + ? WHERE id = ?",
+                    (amount, user_id),
+                )
+                await db.execute("""
+                    INSERT INTO transactions
+                        (user_id, currency_type, operation, amount, reason, performed_by)
+                    VALUES (?, 'points', 'add', ?, ?, ?)
+                """, (
+                    user_id, amount, reason or "Выдача из казны",
+                    initiated_by_telegram_id,
+                ))
+                await db.execute("""
+                    INSERT INTO treasury_transactions (
+                        treasury_id, operation_type, currency_type, amount,
+                        balance_before, balance_after, related_user_id,
+                        initiated_by_telegram_id, reason, source, request_key
+                    ) VALUES (?, 'staff_payout', 'points', ?, ?, ?, ?, ?, ?,
+                              'staff_payout', ?)
+                """, (
+                    treasury_id, amount, running, after, user_id,
+                    initiated_by_telegram_id, reason,
+                    f"{request_key}:{user_id}",
+                ))
+                running = after
+
+            await db.execute("""
+                UPDATE treasury_balances
+                SET amount = ?, updated_at = datetime('now')
+                WHERE treasury_id = ? AND currency_type = 'points'
+            """, (running, treasury_id))
+            await db.commit()
+            return {
+                "balance_before": before,
+                "balance_after": running,
+                "total": total,
+            }
+        except Exception:
+            await db.rollback()
+            raise

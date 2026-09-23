@@ -7,6 +7,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import BotCommand
 
 from bot.config import config
 from bot.database.models import init_db
@@ -16,8 +17,8 @@ from bot.utils.logger import logger
 from bot.utils.sync import auto_sync_clubs
 
 # Импорт роутеров
-from bot.handlers import start, profile, currency, requests, history, shop, staff_quests, treasury
-from bot.handlers.admin import panel, users, tickets, points, admin_currencies, requests as admin_requests, stats, shop_admin, staff, announcements, quests, club_activity as admin_club_activity, categories as admin_categories
+from bot.handlers import start, commands, profile, currency, requests, history, shop, treasury
+from bot.handlers.admin import panel, users, tickets, points, admin_currencies, requests as admin_requests, stats, shop_admin, staff, announcements, club_activity as admin_club_activity
 
 
 async def main() -> None:
@@ -45,6 +46,7 @@ async def main() -> None:
 
     # Подключение роутеров (порядок важен!)
     dp.include_router(start.router)
+    dp.include_router(commands.router)
     dp.include_router(profile.router)
     dp.include_router(currency.router)
     dp.include_router(requests.router)
@@ -62,13 +64,8 @@ async def main() -> None:
     dp.include_router(shop.router)
     dp.include_router(treasury.router)
     dp.include_router(staff.router)
-    dp.include_router(admin_categories.router)
     dp.include_router(announcements.router)
-    dp.include_router(quests.router)
     dp.include_router(admin_club_activity.router)
-
-    # Роутер для Staff
-    dp.include_router(staff_quests.router)
 
     # Запуск поллинга и фоновых задач
     logger.info(f"Бот запущен. Owner ID: {config.owner_id}")
@@ -83,6 +80,16 @@ async def main() -> None:
     try:
         # Сбрасываем все накопившиеся за время офлайна старые обновления
         await bot.delete_webhook(drop_pending_updates=True)
+        await bot.set_my_commands([
+            BotCommand(command="start", description="Запустить бота"),
+            BotCommand(command="vgsmenu", description="Открыть главное меню"),
+            BotCommand(command="profile", description="Мой профиль"),
+            BotCommand(command="tickets", description="Мои тикеты"),
+            BotCommand(command="points", description="Мои баллы"),
+            BotCommand(command="stars", description="Мои звёзды"),
+            BotCommand(command="shop", description="Открыть магазин"),
+            BotCommand(command="kazna", description="Открыть казну"),
+        ])
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
         await bot.session.close()

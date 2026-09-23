@@ -13,10 +13,9 @@ import json
 import os
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, Form, HTTPException, Request
 from fastapi.responses import (
     HTMLResponse,
-    JSONResponse,
     RedirectResponse,
     StreamingResponse,
 )
@@ -116,11 +115,11 @@ async def api_overview(_: None = Depends(require_auth)):
     pending_orders = db.query_scalar(
         "SELECT COUNT(*) FROM shop_orders WHERE status='pending'"
     ) or 0
-    active_quests = db.query_scalar(
-        "SELECT COUNT(*) FROM quests WHERE status='active'"
-    ) or 0
     staff_count = db.query_scalar(
         "SELECT COUNT(*) FROM staff WHERE is_active=1"
+    ) or 0
+    treasury_points = db.query_scalar(
+        "SELECT COALESCE(SUM(amount), 0) FROM treasury_balances WHERE currency_type='points'"
     ) or 0
 
     points_total = db.query_scalar("SELECT COALESCE(SUM(points),0) FROM users") or 0
@@ -139,8 +138,8 @@ async def api_overview(_: None = Depends(require_auth)):
         "transactions": {"today": tx_today, "total": tx_total},
         "requests": {"pending": pending_requests},
         "orders": {"pending": pending_orders},
-        "quests": {"active": active_quests},
         "staff": {"active": staff_count},
+        "treasury": {"points": treasury_points},
         "points": {"total": points_total, "added_today": points_added_today},
     }
 
@@ -314,7 +313,7 @@ async def api_transactions(
     return {"total": total, "rows": rows}
 
 
-# ---------- API: requests / orders / quests ----------
+# ---------- API: requests / orders ----------
 
 @app.get("/api/requests")
 async def api_requests(status: str = "", limit: int = 100, offset: int = 0,
@@ -365,30 +364,6 @@ async def api_orders(status: str = "", limit: int = 100, offset: int = 0,
         params + [limit, offset],
     )
     return {"total": total, "rows": rows}
-
-
-@app.get("/api/quests")
-async def api_quests(status: str = "", _: None = Depends(require_auth)):
-    where = []
-    params: list = []
-    if status in ("active", "closed"):
-        where.append("q.status=?"); params.append(status)
-    where_sql = f"WHERE {' AND '.join(where)}" if where else ""
-
-    quests = db.query_all(
-        f"""
-        SELECT q.*,
-               (SELECT COUNT(*) FROM quest_assignments a WHERE a.quest_id=q.id) AS taken,
-               (SELECT COUNT(*) FROM quest_assignments a WHERE a.quest_id=q.id AND a.status='approved') AS approved,
-               (SELECT COUNT(*) FROM quest_assignments a WHERE a.quest_id=q.id AND a.status='submitted') AS pending
-        FROM quests q
-        {where_sql}
-        ORDER BY q.id DESC
-        LIMIT 200
-        """,
-        params,
-    )
-    return quests
 
 
 # ---------- API: логи ----------
